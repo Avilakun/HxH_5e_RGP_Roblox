@@ -25,6 +25,12 @@ local DeleteHatsu = HxH5e:WaitForChild("DeleteHatsu")
 local GainXP = HxH5e:WaitForChild("GainXP")
 local AddGrau = HxH5e:WaitForChild("AddGrau")
 local AddRestricao = HxH5e:WaitForChild("AddRestricao")
+local GetRaces = HxH5e:WaitForChild("GetRaces")
+local DeleteCharacter = HxH5e:WaitForChild("DeleteCharacter")
+local GetBackgrounds = HxH5e:WaitForChild("GetBackgrounds")
+local GetPointBuyInfo = HxH5e:WaitForChild("GetPointBuyInfo")
+local GetInclinations = HxH5e:WaitForChild("GetInclinations")
+local GetSkillsInfo = HxH5e:WaitForChild("GetSkillsInfo")
 
 local RESTRICAO_IDS = { "Compromisso", "Condicao", "Limitacao", "Requisito" }
 
@@ -95,39 +101,83 @@ local openButton = makeButton(screenGui, "AbrirFichaButton", "ABRIR FICHA",
 	UDim2.new(1, -170, 1, -60), UDim2.new(0, 150, 0, 42))
 openButton.AnchorPoint = Vector2.new(1, 1)
 
--- ================= Toast =================
+-- ================= Toast (notificacoes empilhadas) =================
+-- Caixa fica invisivel ate a primeira mensagem. Cada nova mensagem entra
+-- no topo da lista (mais transparente, texto acumula). Some sozinha depois
+-- de 5s sem novas mensagens, mas o historico continua ali dentro; se uma
+-- nova acao gerar texto, ela reaparece com tudo que já tinha antes.
 
 local toastFrame = makeFrame(screenGui, "ToastFrame",
-	UDim2.new(0, 280, 0, 90), UDim2.new(1, -300, 0, 12), Color3.fromRGB(10, 10, 10))
+	UDim2.new(0, 280, 0, 160), UDim2.new(1, -300, 0, 12), Color3.fromRGB(10, 10, 10))
 toastFrame.AnchorPoint = Vector2.new(1, 0)
-toastFrame.BackgroundTransparency = 0.15
-toastFrame.BorderSizePixel = 2
+toastFrame.BackgroundTransparency = 0.55
+toastFrame.BorderSizePixel = 1
 toastFrame.BorderColor3 = Color3.fromRGB(0, 255, 157)
 toastFrame.ZIndex = 100
 toastFrame.Visible = false
-
-local toastLabel = makeLabel(toastFrame, "ToastText", "",
-	UDim2.new(0, 10, 0, 8), UDim2.new(1, -20, 1, -16), 14)
-toastLabel.TextWrapped = true
-toastLabel.TextXAlignment = Enum.TextXAlignment.Left
-toastLabel.TextYAlignment = Enum.TextYAlignment.Top
-toastLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-toastLabel.ZIndex = 101
 
 local toastClose = makeButton(toastFrame, "ToastClose", "X",
 	UDim2.new(1, -28, 0, 4), UDim2.new(0, 24, 0, 24))
 toastClose.TextSize = 12
 toastClose.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+toastClose.BackgroundTransparency = 0.3
 toastClose.ZIndex = 102
 
-local toastTimer = nil
-local function showToast(message, duration)
-	toastLabel.Text = message or ""
-	toastFrame.Visible = true
-	if toastTimer then
-		task.cancel(toastTimer)
+local toastScroll = Instance.new("ScrollingFrame")
+toastScroll.Name = "ToastScroll"
+toastScroll.Size = UDim2.new(1, -20, 1, -36)
+toastScroll.Position = UDim2.new(0, 10, 0, 32)
+toastScroll.BackgroundTransparency = 1
+toastScroll.ScrollBarThickness = 4
+toastScroll.BorderSizePixel = 0
+toastScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+toastScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+toastScroll.ZIndex = 101
+toastScroll.Parent = toastFrame
+
+local toastLayout = Instance.new("UIListLayout")
+toastLayout.Padding = UDim.new(0, 4)
+toastLayout.Parent = toastScroll
+
+local TOAST_MAX_ENTRIES = 15
+local TOAST_HIDE_DELAY = 5
+local toastHideTimer = nil
+
+local function showToast(message)
+	if not message or #message == 0 then
+		return
 	end
-	toastTimer = task.delay(duration or 4, function()
+
+	local entry = makeLabel(toastScroll, "ToastEntry", message,
+		UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 0), 12)
+	entry.TextWrapped = true
+	entry.TextXAlignment = Enum.TextXAlignment.Left
+	entry.TextYAlignment = Enum.TextYAlignment.Top
+	entry.AutomaticSize = Enum.AutomaticSize.Y
+	entry.BackgroundTransparency = 1
+	entry.ZIndex = 101
+	entry.LayoutOrder = -math.floor(os.clock() * 1000) -- mais recente primeiro
+
+	local entries = {}
+	for _, child in ipairs(toastScroll:GetChildren()) do
+		if child:IsA("TextLabel") then
+			table.insert(entries, child)
+		end
+	end
+	table.sort(entries, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+	if #entries > TOAST_MAX_ENTRIES then
+		for i = TOAST_MAX_ENTRIES + 1, #entries do
+			entries[i]:Destroy()
+		end
+	end
+
+	toastFrame.Visible = true
+	toastScroll.CanvasPosition = Vector2.zero
+
+	if toastHideTimer then
+		task.cancel(toastHideTimer)
+	end
+	toastHideTimer = task.delay(TOAST_HIDE_DELAY, function()
 		toastFrame.Visible = false
 	end)
 end
@@ -204,115 +254,262 @@ local function addCloseButton(frame)
 	end)
 end
 
--- ================= Janela da ficha (rolável) =================
+-- ================= Janela da ficha (com guias, igual ao webapp) =================
+-- 7 guias reais do webapp: FICHA / BIO / NEN / TRAÇOS / INV / DADOS / COND.
+-- Por ora, so FICHA / NEN / TRAÇOS tem dados de verdade no servidor; as
+-- outras 4 aparecem na barra mas ficam desabilitadas ("em breve").
 
 local fichaFrame = makeFrame(screenGui, "FichaWindow",
-	UDim2.fromOffset(400, 520), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+	UDim2.fromOffset(430, 560), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
 fichaFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 fichaFrame.Visible = false
 addCloseButton(fichaFrame)
 
-local contentScroll = Instance.new("ScrollingFrame")
-contentScroll.Name = "ContentScroll"
-contentScroll.Size = UDim2.new(1, -20, 1, -150)
-contentScroll.Position = UDim2.new(0, 10, 0, 44)
-contentScroll.BackgroundTransparency = 1
-contentScroll.ScrollBarThickness = 6
-contentScroll.BorderSizePixel = 0
-contentScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-contentScroll.ElasticBehavior = Enum.ElasticBehavior.Never
-contentScroll.Parent = fichaFrame
+-- ---------- Barra de guias ----------
+-- (elementos que nao precisam sobreviver ficam dentro do "do...end" pra
+-- liberar o registrador de variavel local assim que o bloco termina --
+-- Luau tem um teto de 200 locais simultaneas por escopo)
 
-local content = makeFrame(contentScroll, "Content",
-	UDim2.new(1, 0, 0, 660), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
-content.BackgroundTransparency = 1
+local TAB_LIST = {
+	{ id = "FICHA", label = "FICHA", enabled = true },
+	{ id = "BIO", label = "BIO", enabled = false },
+	{ id = "NEN", label = "NEN", enabled = true },
+	{ id = "TRACOS", label = "TRAÇOS", enabled = true },
+	{ id = "INV", label = "INV", enabled = false },
+	{ id = "DADOS", label = "DADOS", enabled = false },
+	{ id = "COND", label = "COND", enabled = false },
+}
 
-local titleLabel = makeLabel(content, "TitleLabel", "Nenhum personagem",
-	UDim2.new(0, 0, 0, 8), UDim2.new(1, -20, 0, 30), 20)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextWrapped = true
-
-local categoryLabel = makeLabel(content, "CategoryLabel", "Categoria: —",
-	UDim2.new(0, 0, 0, 40), UDim2.new(1, 0, 0, 20), 14)
-categoryLabel.TextColor3 = Color3.fromRGB(0, 255, 157)
-
-local geniusLabel = makeLabel(content, "GeniusLabel", "Genialidade: —",
-	UDim2.new(0, 0, 0, 60), UDim2.new(1, 0, 0, 18), 12)
-geniusLabel.TextColor3 = Color3.fromRGB(190, 170, 255)
-
-local xpLabel = makeLabel(content, "XpLabel", "XP: -",
-	UDim2.new(0, 0, 0, 78), UDim2.new(1, 0, 0, 18), 12)
-xpLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
-
-local attributeNames = { "FOR", "DES", "CON", "INT", "SAB", "PRE" }
-local attributeLabels = {}
-for i, attributeName in ipairs(attributeNames) do
-	local label = makeLabel(content, "Attr_" .. attributeName,
-		attributeName .. ": -",
-		UDim2.new(0, 20, 0, 100 + (i - 1) * 24),
-		UDim2.new(0, 150, 0, 22), 16)
-	attributeLabels[attributeName] = label
+local tabButtons = {}
+do
+	local tabBarFrame = makeFrame(fichaFrame, "TabBar",
+		UDim2.new(1, -20, 0, 26), UDim2.new(0, 10, 0, 40), Color3.fromRGB(0, 0, 0))
+	tabBarFrame.BackgroundTransparency = 1
+	for i, tabInfo in ipairs(TAB_LIST) do
+		local btn = makeButton(tabBarFrame, "Tab_" .. tabInfo.id, tabInfo.label,
+			UDim2.new(0, (i - 1) * 57, 0, 0), UDim2.new(0, 55, 0, 26))
+		btn.TextSize = 9
+		if not tabInfo.enabled then
+			btn.BackgroundColor3 = Color3.fromRGB(25, 27, 34)
+			btn.TextColor3 = Color3.fromRGB(90, 90, 100)
+		end
+		tabButtons[tabInfo.id] = btn
+	end
 end
 
-local hpLabel = makeLabel(content, "HpLabel", "HP: -",
-	UDim2.new(0, 190, 0, 100), UDim2.new(0, 150, 0, 22), 16)
-local auraLabel = makeLabel(content, "AuraLabel", "Aura: -",
-	UDim2.new(0, 190, 0, 124), UDim2.new(0, 150, 0, 22), 16)
-local sanidadeLabel = makeLabel(content, "SanidadeLabel", "Sanidade: -",
-	UDim2.new(0, 190, 0, 148), UDim2.new(0, 150, 0, 22), 16)
+-- ---------- Conteudo: FICHA (status) ----------
 
-local dominioTitle = makeLabel(content, "DominioTitle", "DOMÍNIO DE NEN",
-	UDim2.new(0, 20, 0, 250), UDim2.new(0, 200, 0, 18), 13)
-dominioTitle.Font = Enum.Font.GothamBold
-dominioTitle.TextColor3 = Color3.fromRGB(0, 255, 157)
+local statusScroll = Instance.new("ScrollingFrame")
+statusScroll.Name = "StatusScroll"
+statusScroll.Size = UDim2.new(1, -20, 1, -180)
+statusScroll.Position = UDim2.new(0, 10, 0, 72)
+statusScroll.BackgroundTransparency = 1
+statusScroll.ScrollBarThickness = 6
+statusScroll.BorderSizePixel = 0
+statusScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+statusScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+statusScroll.Parent = fichaFrame
 
-local pnLabel = makeLabel(content, "PnLabel", "P.N: -",
-	UDim2.new(0, 190, 0, 250), UDim2.new(0, 150, 0, 18), 12)
-pnLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+local titleLabel, categoryLabel, geniusLabel, xpLabel
+local attributeNames = { "FOR", "DES", "CON", "INT", "SAB", "PRE" }
+local attributeLabels = {}
+local hpLabel, auraLabel, sanidadeLabel
+do
+	local statusContent = makeFrame(statusScroll, "Content",
+		UDim2.new(1, 0, 0, 200), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	statusContent.BackgroundTransparency = 1
+
+	titleLabel = makeLabel(statusContent, "TitleLabel", "Nenhum personagem",
+		UDim2.new(0, 0, 0, 4), UDim2.new(1, -20, 0, 30), 20)
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextWrapped = true
+
+	categoryLabel = makeLabel(statusContent, "CategoryLabel", "Categoria: —",
+		UDim2.new(0, 0, 0, 36), UDim2.new(1, 0, 0, 20), 14)
+	categoryLabel.TextColor3 = Color3.fromRGB(0, 255, 157)
+
+	geniusLabel = makeLabel(statusContent, "GeniusLabel", "Genialidade: —",
+		UDim2.new(0, 0, 0, 56), UDim2.new(1, 0, 0, 18), 12)
+	geniusLabel.TextColor3 = Color3.fromRGB(190, 170, 255)
+
+	xpLabel = makeLabel(statusContent, "XpLabel", "XP: -",
+		UDim2.new(0, 0, 0, 74), UDim2.new(1, 0, 0, 18), 12)
+	xpLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+
+	for i, attributeName in ipairs(attributeNames) do
+		local col = (i - 1) % 2
+		local row = math.floor((i - 1) / 2)
+		local label = makeLabel(statusContent, "Attr_" .. attributeName,
+			attributeName .. ": -",
+			UDim2.new(0, 20 + col * 190, 0, 100 + row * 26),
+			UDim2.new(0, 170, 0, 22), 16)
+		attributeLabels[attributeName] = label
+	end
+
+	hpLabel = makeLabel(statusContent, "HpLabel", "HP: -",
+		UDim2.new(0, 20, 0, 184), UDim2.new(0, 190, 0, 22), 16)
+	auraLabel = makeLabel(statusContent, "AuraLabel", "Aura: -",
+		UDim2.new(0, 210, 0, 184), UDim2.new(0, 170, 0, 22), 16)
+	sanidadeLabel = makeLabel(statusContent, "SanidadeLabel", "Sanidade: -",
+		UDim2.new(0, 20, 0, 208), UDim2.new(0, 190, 0, 22), 16)
+end
+
+-- ---------- Conteudo: NEN (dominio + hatsus, igual ao webapp) ----------
+
+local nenScroll = Instance.new("ScrollingFrame")
+nenScroll.Name = "NenScroll"
+nenScroll.Size = UDim2.new(1, -20, 1, -180)
+nenScroll.Position = UDim2.new(0, 10, 0, 72)
+nenScroll.BackgroundTransparency = 1
+nenScroll.ScrollBarThickness = 6
+nenScroll.BorderSizePixel = 0
+nenScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+nenScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+nenScroll.Visible = false
+nenScroll.Parent = fichaFrame
+do
+	local nenLayout = Instance.new("UIListLayout")
+	nenLayout.Padding = UDim.new(0, 4)
+	nenLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	nenLayout.Parent = nenScroll
+end
+
+local pnLabel
+do
+	local dominioHeaderRow = makeFrame(nenScroll, "DominioHeader",
+		UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	dominioHeaderRow.BackgroundTransparency = 1
+	dominioHeaderRow.LayoutOrder = 10
+
+	local dominioTitle = makeLabel(dominioHeaderRow, "DominioTitle", "DOMÍNIO DE NEN",
+		UDim2.new(0, 0, 0, 0), UDim2.new(0, 220, 1, 0), 13)
+	dominioTitle.Font = Enum.Font.GothamBold
+	dominioTitle.TextColor3 = Color3.fromRGB(0, 255, 157)
+	dominioTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+	pnLabel = makeLabel(dominioHeaderRow, "PnLabel", "P.N: -",
+		UDim2.new(0, 220, 0, 0), UDim2.new(0, 150, 1, 0), 12)
+	pnLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+end
 
 local FUND_NAMES = { "Ten", "Ren", "Zetsu" }
 local dominioRows = {}
 for i, name in ipairs(FUND_NAMES) do
-	local rowY = 274 + (i - 1) * 30
-	local levelLabel = makeLabel(content, "Dom_" .. name .. "_Lvl",
-		name .. ": -",
-		UDim2.new(0, 20, 0, rowY), UDim2.new(0, 80, 0, 24), 14)
-	local trainButton = makeButton(content, "Dom_" .. name .. "_Train", "+1",
-		UDim2.new(0, 110, 0, rowY), UDim2.new(0, 40, 0, 24))
+	local rowFrame = makeFrame(nenScroll, "DomRow_" .. name,
+		UDim2.new(1, 0, 0, 26), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	rowFrame.BackgroundTransparency = 1
+	rowFrame.LayoutOrder = 20 + i
+	local levelLabel = makeLabel(rowFrame, "Lvl", name .. ": -",
+		UDim2.new(0, 0, 0, 0), UDim2.new(0, 80, 1, 0), 14)
+	local trainButton = makeButton(rowFrame, "Train", "+1",
+		UDim2.new(0, 90, 0, 0), UDim2.new(0, 40, 1, 0))
 	trainButton.TextSize = 12
-	local activateButton = makeButton(content, "Dom_" .. name .. "_Act", "ATIVAR",
-		UDim2.new(0, 155, 0, rowY), UDim2.new(0, 70, 0, 24))
+	local activateButton = makeButton(rowFrame, "Act", "ATIVAR",
+		UDim2.new(0, 135, 0, 0), UDim2.new(0, 70, 1, 0))
 	activateButton.TextSize = 11
 	dominioRows[name] = { levelLabel = levelLabel, trainButton = trainButton, activateButton = activateButton }
 end
 
-local advTitle = makeLabel(content, "AdvTitle", "PRINCÍPIOS AVANÇADOS",
-	UDim2.new(0, 20, 0, 372), UDim2.new(0, 200, 0, 16), 12)
-advTitle.Font = Enum.Font.GothamBold
-advTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
+do
+	local advTitle = makeLabel(nenScroll, "AdvTitle", "PRINCÍPIOS AVANÇADOS",
+		UDim2.new(0, 0, 0, 0), UDim2.new(0, 220, 0, 16), 12)
+	advTitle.Font = Enum.Font.GothamBold
+	advTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
+	advTitle.TextXAlignment = Enum.TextXAlignment.Left
+	advTitle.LayoutOrder = 30
+end
 
 local ADV_NAMES = { "En", "Inp", "Gyo", "Shu", "Ken", "Ko", "Ryu" }
 local advRows = {}
 for i, name in ipairs(ADV_NAMES) do
-	local rowY = 394 + (i - 1) * 26
-	local statusLabel = makeLabel(content, "Adv_" .. name .. "_Lvl",
-		name .. ": —",
-		UDim2.new(0, 20, 0, rowY), UDim2.new(0, 100, 0, 22), 13)
-	local unlockButton = makeButton(content, "Adv_" .. name .. "_Unlock", "DESBLOQ",
-		UDim2.new(0, 130, 0, rowY), UDim2.new(0, 90, 0, 22))
+	local rowFrame = makeFrame(nenScroll, "AdvRow_" .. name,
+		UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	rowFrame.BackgroundTransparency = 1
+	rowFrame.LayoutOrder = 40 + i
+	local statusLabel = makeLabel(rowFrame, "Lvl", name .. ": —",
+		UDim2.new(0, 0, 0, 0), UDim2.new(0, 100, 1, 0), 13)
+	local unlockButton = makeButton(rowFrame, "Unlock", "DESBLOQ",
+		UDim2.new(0, 110, 0, 0), UDim2.new(0, 90, 1, 0))
 	unlockButton.TextSize = 10
-	local activateButton = makeButton(content, "Adv_" .. name .. "_Act", "ATIVAR",
-		UDim2.new(0, 225, 0, rowY), UDim2.new(0, 70, 0, 22))
+	local activateButton = makeButton(rowFrame, "Act", "ATIVAR",
+		UDim2.new(0, 205, 0, 0), UDim2.new(0, 70, 1, 0))
 	activateButton.TextSize = 10
 	advRows[name] = { statusLabel = statusLabel, unlockButton = unlockButton, activateButton = activateButton }
 end
 
-local nenMessageLabel = makeLabel(content, "NenMessage", "",
-	UDim2.new(0, 20, 0, 584), UDim2.new(0, 360, 0, 40), 11)
+local nenMessageLabel = makeLabel(nenScroll, "NenMessage", "",
+	UDim2.new(0, 0, 0, 0), UDim2.new(1, -10, 0, 40), 11)
 nenMessageLabel.TextWrapped = true
 nenMessageLabel.TextXAlignment = Enum.TextXAlignment.Left
 nenMessageLabel.TextYAlignment = Enum.TextYAlignment.Top
 nenMessageLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
+nenMessageLabel.LayoutOrder = 50
+
+do
+	local hatsuSectionTitle = makeLabel(nenScroll, "HatsuSectionTitle", "HATSUS",
+		UDim2.new(0, 0, 0, 0), UDim2.new(0, 220, 0, 20), 14)
+	hatsuSectionTitle.Font = Enum.Font.GothamBold
+	hatsuSectionTitle.TextColor3 = Color3.fromRGB(255, 200, 0)
+	hatsuSectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+	hatsuSectionTitle.LayoutOrder = 60
+end
+
+local hatsuCreateButton
+do
+	local hatsuActionRow = makeFrame(nenScroll, "HatsuActionRow",
+		UDim2.new(1, 0, 0, 34), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	hatsuActionRow.BackgroundTransparency = 1
+	hatsuActionRow.LayoutOrder = 70
+
+	hatsuCreateButton = makeButton(hatsuActionRow, "HatsuCreateButton", "CRIAR HATSU (WIZARD)",
+		UDim2.new(0, 0, 0, 0), UDim2.new(0, 180, 1, 0))
+	hatsuCreateButton.TextSize = 11
+end
+
+local hatsuMessageLabel = makeLabel(nenScroll, "HatsuMessage", "",
+	UDim2.new(0, 0, 0, 0), UDim2.new(1, -10, 0, 32), 11)
+hatsuMessageLabel.TextWrapped = true
+hatsuMessageLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
+hatsuMessageLabel.LayoutOrder = 80
+
+local hatsuScroll = Instance.new("Frame")
+hatsuScroll.Name = "HatsuScroll"
+hatsuScroll.Size = UDim2.new(1, 0, 0, 60)
+hatsuScroll.BackgroundTransparency = 1
+hatsuScroll.AutomaticSize = Enum.AutomaticSize.Y
+hatsuScroll.LayoutOrder = 90
+hatsuScroll.Parent = nenScroll
+do
+	local hatsuLayout = Instance.new("UIListLayout")
+	hatsuLayout.Padding = UDim.new(0, 6)
+	hatsuLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	hatsuLayout.Parent = hatsuScroll
+end
+
+local hatsuEmptyLabel = makeLabel(hatsuScroll, "HatsuEmpty",
+	"Nenhum Hatsu ainda.\nClique em CRIAR HATSU (WIZARD).",
+	UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 40), 12)
+hatsuEmptyLabel.TextWrapped = true
+
+-- ---------- Conteudo: TRAÇOS (raca, antecedente, inclinacoes, pericias) ----------
+
+local tracosScroll = Instance.new("ScrollingFrame")
+tracosScroll.Name = "TracosScroll"
+tracosScroll.Size = UDim2.new(1, -20, 1, -180)
+tracosScroll.Position = UDim2.new(0, 10, 0, 72)
+tracosScroll.BackgroundTransparency = 1
+tracosScroll.ScrollBarThickness = 6
+tracosScroll.BorderSizePixel = 0
+tracosScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+tracosScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+tracosScroll.Visible = false
+tracosScroll.Parent = fichaFrame
+do
+	local tracosLayout = Instance.new("UIListLayout")
+	tracosLayout.Padding = UDim.new(0, 8)
+	tracosLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tracosLayout.Parent = tracosScroll
+end
 
 -- ================= Botões fixos da ficha =================
 
@@ -320,12 +517,8 @@ local xpButton = makeButton(fichaFrame, "XpButton", "+50 XP",
 	UDim2.new(0, 20, 1, -92), UDim2.new(0, 110, 0, 36))
 xpButton.TextSize = 12
 
-local hatsuButton = makeButton(fichaFrame, "HatsuButton", "HATSUS",
-	UDim2.new(0, 140, 1, -92), UDim2.new(0, 90, 0, 36))
-hatsuButton.TextSize = 13
-
 local trocarButton = makeButton(fichaFrame, "TrocarButton", "TROCAR",
-	UDim2.new(0, 240, 1, -92), UDim2.new(0, 140, 0, 36))
+	UDim2.new(0, 140, 1, -92), UDim2.new(0, 140, 0, 36))
 trocarButton.TextSize = 12
 
 local criarButton = makeButton(fichaFrame, "CriarButton", "CRIAR PERSONAGEM",
@@ -407,6 +600,187 @@ local confirmButton = makeButton(createFrame, "ConfirmButton", "CONFIRMAR",
 local cancelButton = makeButton(createFrame, "CancelButton", "CANCELAR",
 	UDim2.new(0, 184, 1, -46), UDim2.new(0, 160, 0, 36))
 
+-- ================= Janela de escolha de raça =================
+
+local raceFrame = makeFrame(screenGui, "RaceWindow",
+	UDim2.fromOffset(420, 460), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+raceFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+raceFrame.Visible = false
+addCloseButton(raceFrame)
+
+makeLabel(raceFrame, "RaceTitle", "ESCOLHA SUA RAÇA",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 26), 18)
+
+local raceScroll = Instance.new("ScrollingFrame")
+raceScroll.Name = "RaceScroll"
+raceScroll.Size = UDim2.new(1, -32, 1, -60)
+raceScroll.Position = UDim2.new(0, 16, 0, 44)
+raceScroll.BackgroundTransparency = 1
+raceScroll.ScrollBarThickness = 6
+raceScroll.BorderSizePixel = 0
+raceScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+raceScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+raceScroll.Parent = raceFrame
+
+local raceLayout = Instance.new("UIListLayout")
+raceLayout.Padding = UDim.new(0, 6)
+raceLayout.Parent = raceScroll
+
+-- ================= Janela de atributos (compra de pontos) =================
+
+local attrFrame = makeFrame(screenGui, "AttrWindow",
+	UDim2.fromOffset(380, 420), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+attrFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+attrFrame.Visible = false
+addCloseButton(attrFrame)
+
+makeLabel(attrFrame, "AttrTitle", "ATRIBUTOS (Compra de Pontos)",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 16)
+
+local attrPointsLabel = makeLabel(attrFrame, "AttrPoints", "Pontos: 0 / 20",
+	UDim2.new(0, 16, 0, 38), UDim2.new(1, -32, 0, 20), 13)
+attrPointsLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+
+local attrRows = {}
+for i, key in ipairs(attributeNames) do
+	local y = 68 + (i - 1) * 44
+	local lbl = makeLabel(attrFrame, "AttrLbl_" .. key, key .. ": 10  (custo 0)",
+		UDim2.new(0, 16, 0, y), UDim2.new(0, 220, 0, 36), 14)
+	local minusBtn = makeButton(attrFrame, "AttrMinus_" .. key, "-",
+		UDim2.new(0, 250, 0, y), UDim2.new(0, 36, 0, 36))
+	local plusBtn = makeButton(attrFrame, "AttrPlus_" .. key, "+",
+		UDim2.new(0, 292, 0, y), UDim2.new(0, 36, 0, 36))
+	attrRows[key] = { label = lbl, minus = minusBtn, plus = plusBtn }
+end
+
+local attrConfirmButton = makeButton(attrFrame, "AttrConfirm", "CONFIRMAR",
+	UDim2.new(0, 16, 1, -46), UDim2.new(0, 160, 0, 36))
+attrConfirmButton.TextColor3 = Color3.fromRGB(0, 255, 157)
+local attrBackButton = makeButton(attrFrame, "AttrBack", "VOLTAR",
+	UDim2.new(0, 184, 1, -46), UDim2.new(0, 160, 0, 36))
+
+-- ================= Janela de antecedente =================
+
+local bgFrame = makeFrame(screenGui, "BackgroundWindow",
+	UDim2.fromOffset(440, 480), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+bgFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+bgFrame.Visible = false
+addCloseButton(bgFrame)
+
+makeLabel(bgFrame, "BgTitle", "ESCOLHA SEU ANTECEDENTE",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 26), 18)
+
+local bgScroll = Instance.new("ScrollingFrame")
+bgScroll.Name = "BgScroll"
+bgScroll.Size = UDim2.new(1, -32, 1, -60)
+bgScroll.Position = UDim2.new(0, 16, 0, 44)
+bgScroll.BackgroundTransparency = 1
+bgScroll.ScrollBarThickness = 6
+bgScroll.BorderSizePixel = 0
+bgScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+bgScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+bgScroll.Parent = bgFrame
+
+local bgLayout = Instance.new("UIListLayout")
+bgLayout.Padding = UDim.new(0, 6)
+bgLayout.Parent = bgScroll
+
+-- ================= Janela de inclinações =================
+
+local incFrame = makeFrame(screenGui, "IncWindow",
+	UDim2.fromOffset(460, 500), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+incFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+incFrame.Visible = false
+addCloseButton(incFrame)
+
+makeLabel(incFrame, "IncTitle", "INCLINAÇÕES",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 18)
+
+local incSummaryLabel = makeLabel(incFrame, "IncSummary", "",
+	UDim2.new(0, 16, 0, 36), UDim2.new(1, -32, 0, 32), 11)
+incSummaryLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+incSummaryLabel.TextWrapped = true
+
+local incTabsFrame = makeFrame(incFrame, "IncTabs",
+	UDim2.new(1, -32, 0, 28), UDim2.new(0, 16, 0, 70), Color3.fromRGB(0, 0, 0))
+incTabsFrame.BackgroundTransparency = 1
+
+local incPosTab = makeButton(incTabsFrame, "IncPosTab", "POSITIVAS",
+	UDim2.new(0, 0, 0, 0), UDim2.new(0, 150, 0, 26))
+incPosTab.TextSize = 11
+local incNegTab = makeButton(incTabsFrame, "IncNegTab", "NEGATIVAS",
+	UDim2.new(0, 154, 0, 0), UDim2.new(0, 150, 0, 26))
+incNegTab.TextSize = 11
+
+local incScroll = Instance.new("ScrollingFrame")
+incScroll.Name = "IncScroll"
+incScroll.Size = UDim2.new(1, -32, 1, -168)
+incScroll.Position = UDim2.new(0, 16, 0, 104)
+incScroll.BackgroundTransparency = 1
+incScroll.ScrollBarThickness = 6
+incScroll.BorderSizePixel = 0
+incScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+incScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+incScroll.Parent = incFrame
+
+local incLayout = Instance.new("UIListLayout")
+incLayout.Padding = UDim.new(0, 4)
+incLayout.Parent = incScroll
+
+local incConfirmButton = makeButton(incFrame, "IncConfirm", "CONFIRMAR E CRIAR",
+	UDim2.new(0, 16, 1, -46), UDim2.new(0, 220, 0, 36))
+incConfirmButton.TextColor3 = Color3.fromRGB(0, 255, 157)
+local incBackButton = makeButton(incFrame, "IncBack", "VOLTAR",
+	UDim2.new(0, 244, 1, -46), UDim2.new(0, 100, 0, 36))
+
+-- ================= Janela de perícias/treinamentos =================
+
+local skillFrame = makeFrame(screenGui, "SkillWindow",
+	UDim2.fromOffset(440, 500), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+skillFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+skillFrame.Visible = false
+addCloseButton(skillFrame)
+
+makeLabel(skillFrame, "SkillTitle", "PERÍCIAS E TREINAMENTOS",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 16)
+
+local skillSummaryLabel = makeLabel(skillFrame, "SkillSummary", "",
+	UDim2.new(0, 16, 0, 36), UDim2.new(1, -32, 0, 32), 11)
+skillSummaryLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+skillSummaryLabel.TextWrapped = true
+
+local skillTabsFrame = makeFrame(skillFrame, "SkillTabs",
+	UDim2.new(1, -32, 0, 28), UDim2.new(0, 16, 0, 70), Color3.fromRGB(0, 0, 0))
+skillTabsFrame.BackgroundTransparency = 1
+
+local skillMainTab = makeButton(skillTabsFrame, "SkillMainTab", "PERÍCIAS",
+	UDim2.new(0, 0, 0, 0), UDim2.new(0, 150, 0, 26))
+skillMainTab.TextSize = 11
+local skillOtherTab = makeButton(skillTabsFrame, "SkillOtherTab", "OUTROS TREINOS",
+	UDim2.new(0, 154, 0, 0), UDim2.new(0, 150, 0, 26))
+skillOtherTab.TextSize = 11
+
+local skillScroll = Instance.new("ScrollingFrame")
+skillScroll.Name = "SkillScroll"
+skillScroll.Size = UDim2.new(1, -32, 1, -168)
+skillScroll.Position = UDim2.new(0, 16, 0, 104)
+skillScroll.BackgroundTransparency = 1
+skillScroll.ScrollBarThickness = 6
+skillScroll.BorderSizePixel = 0
+skillScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+skillScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+skillScroll.Parent = skillFrame
+
+local skillLayout = Instance.new("UIListLayout")
+skillLayout.Padding = UDim.new(0, 3)
+skillLayout.Parent = skillScroll
+
+local skillConfirmButton = makeButton(skillFrame, "SkillConfirm", "CONFIRMAR E CRIAR",
+	UDim2.new(0, 16, 1, -46), UDim2.new(0, 220, 0, 36))
+skillConfirmButton.TextColor3 = Color3.fromRGB(0, 255, 157)
+local skillBackButton = makeButton(skillFrame, "SkillBack", "VOLTAR",
+	UDim2.new(0, 244, 1, -46), UDim2.new(0, 100, 0, 36))
+
 -- ================= Janela de revelação =================
 
 local resultFrame = makeFrame(screenGui, "AffinityResult",
@@ -441,78 +815,6 @@ resultInfoLabel.TextWrapped = true
 local resultContinueButton = makeButton(resultFrame, "ResultContinue", "CONTINUAR",
 	UDim2.new(0, 16, 1, -46), UDim2.new(1, -32, 0, 36))
 
-
--- ================= Janela de Hatsu =================
-
-local hatsuFrame = makeFrame(screenGui, "HatsuWindow",
-	UDim2.fromOffset(440, 520), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
-hatsuFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-hatsuFrame.Visible = false
-addCloseButton(hatsuFrame)
-
-makeLabel(hatsuFrame, "HatsuTitle", "HATSUS",
-	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 26), 18)
-
-local hatsuScroll = Instance.new("ScrollingFrame")
-hatsuScroll.Name = "HatsuScroll"
-hatsuScroll.Size = UDim2.new(1, -32, 1, -170)
-hatsuScroll.Position = UDim2.new(0, 16, 0, 44)
-hatsuScroll.BackgroundTransparency = 1
-hatsuScroll.ScrollBarThickness = 6
-hatsuScroll.BorderSizePixel = 0
-hatsuScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-hatsuScroll.ElasticBehavior = Enum.ElasticBehavior.Never
-hatsuScroll.Parent = hatsuFrame
-
-local hatsuLayout = Instance.new("UIListLayout")
-hatsuLayout.Padding = UDim.new(0, 6)
-hatsuLayout.Parent = hatsuScroll
-
-local hatsuEmptyLabel = makeLabel(hatsuScroll, "HatsuEmpty",
-	"Nenhum Hatsu ainda.\nClique em CRIAR (WIZARD).",
-	UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 60), 15)
-hatsuEmptyLabel.TextWrapped = true
-
-local hatsuNameBox = Instance.new("TextBox")
-hatsuNameBox.Name = "HatsuNameBox"
-hatsuNameBox.Size = UDim2.new(0, 200, 0, 34)
-hatsuNameBox.Position = UDim2.new(0, 16, 1, -130)
-hatsuNameBox.PlaceholderText = "Nome do Hatsu"
-hatsuNameBox.Text = ""
-hatsuNameBox.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
-hatsuNameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-hatsuNameBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
-hatsuNameBox.Font = Enum.Font.Gotham
-hatsuNameBox.TextSize = 14
-hatsuNameBox.BorderSizePixel = 0
-hatsuNameBox.Parent = hatsuFrame
-
-local hatsuTypeBox = Instance.new("TextBox")
-hatsuTypeBox.Name = "HatsuTypeBox"
-hatsuTypeBox.Size = UDim2.new(0, 200, 0, 34)
-hatsuTypeBox.Position = UDim2.new(0, 16, 1, -88)
-hatsuTypeBox.PlaceholderText = "Tipo: Reforço"
-hatsuTypeBox.Text = ""
-hatsuTypeBox.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
-hatsuTypeBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-hatsuTypeBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
-hatsuTypeBox.Font = Enum.Font.Gotham
-hatsuTypeBox.TextSize = 14
-hatsuTypeBox.BorderSizePixel = 0
-hatsuTypeBox.Parent = hatsuFrame
-
-local hatsuCreateButton = makeButton(hatsuFrame, "HatsuCreateButton", "CRIAR (WIZARD)",
-	UDim2.new(0, 230, 1, -130), UDim2.new(0, 90, 0, 76))
-hatsuCreateButton.TextSize = 11
-
-local hatsuCloseButton = makeButton(hatsuFrame, "HatsuCloseButton", "FECHAR",
-	UDim2.new(0, 330, 1, -46), UDim2.new(0, 90, 0, 34))
-hatsuCloseButton.TextSize = 12
-
-local hatsuMessageLabel = makeLabel(hatsuFrame, "HatsuMessage", "",
-	UDim2.new(0, 16, 1, -46), UDim2.new(0, 300, 0, 40), 11)
-hatsuMessageLabel.TextWrapped = true
-hatsuMessageLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
 
 -- ================= Janela de detalhes do Hatsu =================
 
@@ -634,7 +936,8 @@ local function refreshFicha()
 		return
 	end
 
-	titleLabel.Text = character.Name .. "  •  Nível " .. tostring(character.Level)
+	local racaSufixo = character.Race and ("  •  " .. tostring(character.Race)) or ""
+	titleLabel.Text = character.Name .. "  •  Nível " .. tostring(character.Level) .. racaSufixo
 
 	local nen = character.Nen or {}
 	local category = nen.Category or character.Class or nil
@@ -714,8 +1017,29 @@ local function refreshList()
 			if ok then
 				closeWindow(listFrame)
 				refreshFicha()
+				setFichaTab("FICHA")
 				openWindow(fichaFrame)
 			end
+		end)
+
+		local excluirCharButton = makeButton(row, "ExcluirChar", "EXCLUIR",
+			UDim2.new(1, -110, 0, 6), UDim2.new(0, 104, 1, -12))
+		excluirCharButton.TextSize = 11
+		excluirCharButton.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+		excluirCharButton.Position = UDim2.new(1, -110, 0, 6)
+		-- Empilha o botao EXCLUIR embaixo do SELECIONAR/ATIVO (linha ganha altura)
+		row.Size = UDim2.new(1, 0, 0, 68)
+		selectButton.Size = UDim2.new(0, 104, 0, 26)
+		selectButton.Position = UDim2.new(1, -110, 0, 4)
+		excluirCharButton.Size = UDim2.new(0, 104, 0, 26)
+		excluirCharButton.Position = UDim2.new(1, -110, 0, 36)
+		excluirCharButton.Activated:Connect(function()
+			local result = DeleteCharacter:InvokeServer(character.Id)
+			if result then
+				showToast(tostring(result.message or result.error))
+			end
+			refreshList()
+			refreshFicha()
 		end)
 	end
 end
@@ -731,6 +1055,7 @@ local function refreshHatsus()
 	for index, hatsu in ipairs(hatsus) do
 		local row = makeFrame(hatsuScroll, "HRow_" .. index,
 			UDim2.new(1, 0, 0, 96), UDim2.new(0, 0, 0, 0), Color3.fromRGB(38, 42, 58))
+		row.LayoutOrder = index
 
 		local restricoes = hatsu.Restricoes or {}
 		local contagem = #restricoes
@@ -811,6 +1136,635 @@ local function refreshHatsus()
 	end
 end
 
+-- ---------- Troca de guia ----------
+
+local function refreshTracos()
+	for _, child in ipairs(tracosScroll:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	local character = GetCharacter:InvokeServer()
+	if not character then
+		local lbl = makeLabel(tracosScroll, "Empty", "Nenhum personagem ativo.",
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 30), 13)
+		return
+	end
+
+	local sectionOrder = 0
+	local function addSection(titleText, bodyText, color)
+		sectionOrder = sectionOrder + 1
+		local header = makeLabel(tracosScroll, "H_" .. titleText, titleText,
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 18), 13)
+		header.LayoutOrder = sectionOrder * 10
+		header.Font = Enum.Font.GothamBold
+		header.TextXAlignment = Enum.TextXAlignment.Left
+		header.TextColor3 = color or Color3.fromRGB(0, 255, 157)
+		local body = makeLabel(tracosScroll, "B_" .. titleText, bodyText,
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, -10, 0, 40), 12)
+		body.LayoutOrder = sectionOrder * 10 + 1
+		body.TextWrapped = true
+		body.TextXAlignment = Enum.TextXAlignment.Left
+		body.TextYAlignment = Enum.TextYAlignment.Top
+		body.AutomaticSize = Enum.AutomaticSize.Y
+		body.TextColor3 = Color3.fromRGB(210, 210, 220)
+	end
+
+	local racaTxt = tostring(character.Race or "—")
+	if character.RaceBonusPending and #character.RaceBonusPending > 0 then
+		racaTxt = racaTxt .. "\n(bônus a definir: " .. table.concat(character.RaceBonusPending, ", ") .. ")"
+	end
+	addSection("RAÇA", racaTxt)
+
+	local bgTxt = character.Background and (tostring(character.Background) .. "\nCaracterística: " .. tostring(character.BackgroundFeature)) or "—"
+	addSection("ANTECEDENTE", bgTxt)
+
+	local skillsTxt = (character.Skills and #character.Skills > 0) and table.concat(character.Skills, ", ") or "—"
+	addSection("PERÍCIAS", skillsTxt, Color3.fromRGB(0, 200, 255))
+
+	local otherTxt = (character.OtherSkills and #character.OtherSkills > 0) and table.concat(character.OtherSkills, ", ") or "—"
+	addSection("OUTROS TREINAMENTOS", otherTxt, Color3.fromRGB(0, 200, 255))
+
+	local incPos = {}
+	for _, p in ipairs((character.Inclinations and character.Inclinations.Positive) or {}) do
+		table.insert(incPos, p.Nome)
+	end
+	local incNeg = {}
+	for _, n in ipairs((character.Inclinations and character.Inclinations.Negative) or {}) do
+		table.insert(incNeg, n.Nome)
+	end
+	addSection("INCLINAÇÕES POSITIVAS", #incPos > 0 and table.concat(incPos, ", ") or "—", Color3.fromRGB(0, 255, 157))
+	addSection("INCLINAÇÕES NEGATIVAS", #incNeg > 0 and table.concat(incNeg, ", ") or "—", Color3.fromRGB(255, 100, 100))
+end
+
+local function setFichaTab(tabId)
+	local tabInfo
+	for _, t in ipairs(TAB_LIST) do
+		if t.id == tabId then
+			tabInfo = t
+			break
+		end
+	end
+	if not tabInfo then
+		return
+	end
+	if not tabInfo.enabled then
+		showToast(tabInfo.label .. ": em breve, ainda não implementado.")
+		return
+	end
+
+	for id, btn in pairs(tabButtons) do
+		local isActive = (id == tabId)
+		btn.BackgroundColor3 = isActive and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(38, 42, 58)
+	end
+
+	statusScroll.Visible = (tabId == "FICHA")
+	nenScroll.Visible = (tabId == "NEN")
+	tracosScroll.Visible = (tabId == "TRACOS")
+
+	if tabId == "NEN" then
+		refreshNen()
+		refreshHatsus()
+	elseif tabId == "TRACOS" then
+		refreshTracos()
+	end
+end
+
+for _, tabInfo in ipairs(TAB_LIST) do
+	tabButtons[tabInfo.id].Activated:Connect(function()
+		setFichaTab(tabInfo.id)
+	end)
+end
+
+local pendingCreateName = nil
+local pendingRace = nil
+local pendingAttrs = nil
+local pointBuyInfo = nil -- { costs = {...}, maxCost = 20, defaultValue = 10 }
+local backgroundsCache = nil
+local selectedBgName = nil
+
+local function finishCreateCharacter(raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
+	local result = CreateCharacter:InvokeServer(pendingCreateName, raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
+	if result and result.success then
+		local character = result.character
+		local nen = character.Nen or {}
+		local affinity = nen.Affinity or {}
+		local genius = nen.Genius or {}
+
+		resultRollLabel.Text = "🎲 Afinidade: " .. tostring(affinity.Roll or "-")
+		resultGeniusLabel.Text = "🎲 Genialidade: " .. tostring(genius.Roll or "-")
+			.. " (" .. tostring(genius.Tier or "-") .. ")"
+		resultTierLabel.Text = "Afinidade " .. tostring(affinity.Tier or "-")
+		resultCategoryLabel.Text = "Categoria: " .. tostring(nen.Category or character.Class or "?")
+		local racaTexto = character.Race and ("Raça: " .. tostring(character.Race)) or "Raça: —"
+		if character.RaceBonusPending and #character.RaceBonusPending > 0 then
+			racaTexto = racaTexto .. " (bônus a definir: " .. table.concat(character.RaceBonusPending, ", ") .. ")"
+		end
+		local bgTexto = character.Background and ("Antecedente: " .. tostring(character.Background) .. " (" .. tostring(character.BackgroundFeature) .. ")") or "Antecedente: —"
+		local incTexto = "Inclinações: —"
+		if character.Inclinations then
+			local posNomes, negNomes = {}, {}
+			for _, p in ipairs(character.Inclinations.Positive or {}) do table.insert(posNomes, p.Nome) end
+			for _, n in ipairs(character.Inclinations.Negative or {}) do table.insert(negNomes, n.Nome) end
+			if #posNomes > 0 or #negNomes > 0 then
+				incTexto = "Inclinações: +" .. table.concat(posNomes, ", ") .. " | -" .. table.concat(negNomes, ", ")
+			end
+		end
+		resultInfoLabel.Text = racaTexto .. "\n" .. bgTexto .. "\n" .. incTexto .. "\nSua categoria de Nen define seus Hatsus.\nSua genialidade (2d20) afeta seu avanço."
+
+		closeWindow(skillFrame)
+		closeWindow(incFrame)
+		closeWindow(bgFrame)
+		closeWindow(attrFrame)
+		closeWindow(raceFrame)
+		closeWindow(createFrame)
+		closeWindow(listFrame)
+		openWindow(resultFrame)
+	else
+		showToast(tostring(result and result.error) or "Erro ao criar personagem.")
+	end
+end
+
+-- ================= Passo: Atributos (compra de pontos) =================
+
+local function attrCost(value)
+	if not pointBuyInfo then
+		return 0
+	end
+	return pointBuyInfo.costs[value] or 0
+end
+
+local function refreshAttrUI()
+	local total = 0
+	for _, key in ipairs(attributeNames) do
+		local value = pendingAttrs[key]
+		local cost = attrCost(value)
+		total = total + cost
+		attrRows[key].label.Text = key .. ": " .. value .. "  (custo " .. cost .. ")"
+	end
+	local maxCost = pointBuyInfo and pointBuyInfo.maxCost or 20
+	attrPointsLabel.Text = "Pontos: " .. total .. " / " .. maxCost
+	attrPointsLabel.TextColor3 = (total > maxCost) and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 220, 120)
+end
+
+local function openAttrStep()
+	if not pointBuyInfo then
+		pointBuyInfo = GetPointBuyInfo:InvokeServer()
+	end
+	pendingAttrs = {}
+	for _, key in ipairs(attributeNames) do
+		pendingAttrs[key] = (pointBuyInfo and pointBuyInfo.defaultValue) or 10
+	end
+	refreshAttrUI()
+	openWindow(attrFrame)
+end
+
+for _, key in ipairs(attributeNames) do
+	attrRows[key].minus.Activated:Connect(function()
+		pendingAttrs[key] = math.max(1, pendingAttrs[key] - 1)
+		refreshAttrUI()
+	end)
+	attrRows[key].plus.Activated:Connect(function()
+		pendingAttrs[key] = math.min(30, pendingAttrs[key] + 1)
+		refreshAttrUI()
+	end)
+end
+
+-- ================= Passo: Antecedente =================
+
+local function refreshBackgrounds()
+	for _, child in ipairs(bgScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	for index, bg in ipairs(backgroundsCache or {}) do
+		local expandido = (selectedBgName == bg.nome)
+		local alturaBase = 64
+		local alturaFeatures = expandido and (28 * #bg.caracteristicas + 6) or 0
+		local row = makeFrame(bgScroll, "BgRow_" .. index,
+			UDim2.new(1, 0, 0, alturaBase + alturaFeatures), UDim2.new(0, 0, 0, 0),
+			expandido and Color3.fromRGB(48, 62, 50) or Color3.fromRGB(38, 42, 58))
+		local rowName = makeLabel(row, "BName", tostring(bg.nome or "?"),
+			UDim2.new(0, 10, 0, 4), UDim2.new(1, -110, 0, 18), 13)
+		rowName.TextXAlignment = Enum.TextXAlignment.Left
+		local rowDesc = makeLabel(row, "BDesc", tostring(bg.descricao or ""),
+			UDim2.new(0, 10, 0, 24), UDim2.new(1, -110, 0, 36), 10)
+		rowDesc.TextXAlignment = Enum.TextXAlignment.Left
+		rowDesc.TextWrapped = true
+		rowDesc.TextYAlignment = Enum.TextYAlignment.Top
+		rowDesc.TextColor3 = Color3.fromRGB(170, 170, 180)
+		local escolherBtn = makeButton(row, "BEscolher", expandido and "SELECIONADO" or "VER",
+			UDim2.new(1, -96, 0, 14), UDim2.new(0, 86, 0, 36))
+		escolherBtn.TextSize = 11
+		escolherBtn.BackgroundColor3 = expandido and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(48, 62, 110)
+		escolherBtn.Activated:Connect(function()
+			selectedBgName = expandido and nil or bg.nome
+			refreshBackgrounds()
+		end)
+		if expandido then
+			for fi, c in ipairs(bg.caracteristicas) do
+				local featBtn = makeButton(row, "BFeat_" .. fi, "🌟 " .. tostring(c.nome),
+					UDim2.new(0, 10, 0, 64 + (fi - 1) * 28), UDim2.new(1, -20, 0, 24))
+				featBtn.TextSize = 10
+				featBtn.TextXAlignment = Enum.TextXAlignment.Left
+				featBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 30)
+				featBtn.Activated:Connect(function()
+					pendingBackground = bg.nome
+					pendingBackgroundFeature = c.nome
+					closeWindow(bgFrame)
+					openInclinationsStep()
+				end)
+			end
+		end
+	end
+end
+
+local function openBackgroundStep()
+	if not backgroundsCache then
+		backgroundsCache = GetBackgrounds:InvokeServer()
+	end
+	selectedBgName = nil
+	refreshBackgrounds()
+	openWindow(bgFrame)
+end
+
+-- ================= Passo: Inclinações =================
+
+local pendingBackground = nil
+local pendingBackgroundFeature = nil
+local inclinationsCache = nil -- { positivas, negativas, basicMaxCusto, negativeMaxTotal }
+local incTab = "POSITIVAS"
+local selectedPositive = {} -- set: [fullName] = true
+local selectedNegative = {} -- set: [fullName] = true
+local incExpanded = nil -- nome do item com hasOptions atualmente expandido
+
+local function incFullName(inc, opt)
+	if opt then
+		return inc.nome .. ": " .. opt.label
+	end
+	return inc.nome
+end
+
+local function calcIncTotals()
+	local posCost = 0
+	for name in pairs(selectedPositive) do
+		for _, inc in ipairs(inclinationsCache.positivas) do
+			if inc.hasOptions then
+				for _, opt in ipairs(inc.options) do
+					if incFullName(inc, opt) == name then
+						posCost = posCost + opt.custo
+					end
+				end
+			elseif inc.nome == name then
+				posCost = posCost + inc.custo
+			end
+		end
+	end
+	local negVal = 0
+	for name in pairs(selectedNegative) do
+		for _, inc in ipairs(inclinationsCache.negativas) do
+			if inc.hasOptions then
+				for _, opt in ipairs(inc.options) do
+					if incFullName(inc, opt) == name then
+						negVal = negVal + opt.valor
+					end
+				end
+			elseif inc.nome == name then
+				negVal = negVal + inc.valor
+			end
+		end
+	end
+	local freeCost = 0
+	for name in pairs(selectedPositive) do
+		for _, inc in ipairs(inclinationsCache.positivas) do
+			local custo = nil
+			if inc.hasOptions then
+				for _, opt in ipairs(inc.options) do
+					if incFullName(inc, opt) == name then custo = opt.custo end
+				end
+			elseif inc.nome == name then
+				custo = inc.custo
+			end
+			if custo and custo <= inclinationsCache.basicMaxCusto and custo > freeCost then
+				freeCost = custo
+			end
+		end
+	end
+	local paidCost = math.max(0, posCost - freeCost)
+	return posCost, freeCost, paidCost, negVal
+end
+
+local function refreshIncSummary()
+	local posCost, freeCost, paidCost, negVal = calcIncTotals()
+	local ok = paidCost <= negVal
+	incSummaryLabel.Text = string.format(
+		"Positivo: %d pts | Grátis: %d | Pago: %d | Negativo: %d/%d | Saldo: %s",
+		posCost, freeCost, paidCost, negVal, inclinationsCache.negativeMaxTotal,
+		ok and "OK" or ("faltam " .. (paidCost - negVal))
+	)
+	incSummaryLabel.TextColor3 = ok and Color3.fromRGB(0, 255, 157) or Color3.fromRGB(255, 100, 100)
+end
+
+local function refreshInclinations()
+	for _, child in ipairs(incScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	local list = (incTab == "POSITIVAS") and inclinationsCache.positivas or inclinationsCache.negativas
+	local selectedSet = (incTab == "POSITIVAS") and selectedPositive or selectedNegative
+	local sinal = (incTab == "POSITIVAS") and "" or "+"
+
+	for index, inc in ipairs(list) do
+		local expandido = (incExpanded == inc.nome) and inc.hasOptions
+		local marcado = (not inc.hasOptions) and selectedSet[inc.nome]
+		local alturaBase = 54
+		local alturaOpts = expandido and (26 * #inc.options + 6) or 0
+		local row = makeFrame(incScroll, "IncRow_" .. index,
+			UDim2.new(1, 0, 0, alturaBase + alturaOpts), UDim2.new(0, 0, 0, 0),
+			marcado and Color3.fromRGB(48, 62, 50) or Color3.fromRGB(38, 42, 58))
+		local custoTxt = inc.hasOptions and "(opções)" or (sinal .. tostring(inc.custo or inc.valor) .. " pts")
+		local rowName = makeLabel(row, "IName", tostring(inc.nome) .. "  " .. custoTxt,
+			UDim2.new(0, 8, 0, 3), UDim2.new(1, -100, 0, 16), 12)
+		rowName.TextXAlignment = Enum.TextXAlignment.Left
+		local rowDesc = makeLabel(row, "IDesc", tostring(inc.desc or ""),
+			UDim2.new(0, 8, 0, 19), UDim2.new(1, -16, 0, 32), 9)
+		rowDesc.TextXAlignment = Enum.TextXAlignment.Left
+		rowDesc.TextWrapped = true
+		rowDesc.TextYAlignment = Enum.TextYAlignment.Top
+		rowDesc.TextColor3 = Color3.fromRGB(170, 170, 180)
+
+		local actionBtn = makeButton(row, "IAction",
+			inc.hasOptions and (expandido and "FECHAR" or "VER") or (marcado and "REMOVER" or "ESCOLHER"),
+			UDim2.new(1, -92, 0, 12), UDim2.new(0, 84, 0, 28))
+		actionBtn.TextSize = 10
+		actionBtn.BackgroundColor3 = marcado and Color3.fromRGB(120, 30, 30) or Color3.fromRGB(48, 62, 110)
+		actionBtn.Activated:Connect(function()
+			if inc.hasOptions then
+				incExpanded = expandido and nil or inc.nome
+				refreshInclinations()
+			else
+				if marcado then
+					selectedSet[inc.nome] = nil
+				else
+					selectedSet[inc.nome] = true
+				end
+				refreshInclinations()
+				refreshIncSummary()
+			end
+		end)
+
+		if expandido then
+			for oi, opt in ipairs(inc.options) do
+				local fullName = incFullName(inc, opt)
+				local optSel = selectedSet[fullName]
+				local optBtn = makeButton(row, "IOpt_" .. oi,
+					(optSel and "✓ " or "") .. opt.label .. "  (" .. sinal .. tostring(opt.custo or opt.valor) .. ")",
+					UDim2.new(0, 8, 0, 54 + (oi - 1) * 26), UDim2.new(1, -16, 0, 22))
+				optBtn.TextSize = 9
+				optBtn.TextXAlignment = Enum.TextXAlignment.Left
+				optBtn.BackgroundColor3 = optSel and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(60, 60, 80)
+				optBtn.Activated:Connect(function()
+					if optSel then
+						selectedSet[fullName] = nil
+					else
+						selectedSet[fullName] = true
+					end
+					refreshInclinations()
+					refreshIncSummary()
+				end)
+			end
+		end
+	end
+end
+
+function openInclinationsStep()
+	if not inclinationsCache then
+		inclinationsCache = GetInclinations:InvokeServer()
+	end
+	selectedPositive = {}
+	selectedNegative = {}
+	incExpanded = nil
+	incTab = "POSITIVAS"
+	refreshInclinations()
+	refreshIncSummary()
+	openWindow(incFrame)
+end
+
+incPosTab.Activated:Connect(function()
+	incTab = "POSITIVAS"
+	incExpanded = nil
+	refreshInclinations()
+end)
+
+incNegTab.Activated:Connect(function()
+	incTab = "NEGATIVAS"
+	incExpanded = nil
+	refreshInclinations()
+end)
+
+incBackButton.Activated:Connect(function()
+	closeWindow(incFrame)
+	openBackgroundStep()
+end)
+
+incConfirmButton.Activated:Connect(function()
+	local posCost, freeCost, paidCost, negVal = calcIncTotals()
+	if paidCost > negVal then
+		showToast("Suas positivas custam " .. paidCost .. " P.N (após desconto), mas as negativas só cobrem " .. negVal .. ".")
+		return
+	end
+	local posList, negList = {}, {}
+	for name in pairs(selectedPositive) do table.insert(posList, name) end
+	for name in pairs(selectedNegative) do table.insert(negList, name) end
+	pendingPositiveInc = posList
+	pendingNegativeInc = negList
+	closeWindow(incFrame)
+	openSkillsStep()
+end)
+
+-- ================= Passo: Perícias e Treinamentos =================
+
+local pendingPositiveInc = nil
+local pendingNegativeInc = nil
+local skillsCache = nil -- { skills, otherSkills, autoSkills, maxMain, maxOther, kitsLocked }
+local skillTab = "MAIN"
+local selectedMainSkills = {} -- set
+local selectedOtherSkills = {} -- set
+
+local function refreshSkillSummary()
+	local mainCount = 0
+	for _ in pairs(selectedMainSkills) do mainCount = mainCount + 1 end
+	local otherCount = 0
+	for _ in pairs(selectedOtherSkills) do otherCount = otherCount + 1 end
+	local autoTxt = (#skillsCache.autoSkills > 0) and ("Do antecedente (automático): " .. table.concat(skillsCache.autoSkills, ", ")) or "Sem perícias automáticas do antecedente."
+	skillSummaryLabel.Text = autoTxt .. string.format("\nPerícias manuais: %d/%d | Outros treinos: %d/%d",
+		mainCount, skillsCache.maxMain, otherCount, skillsCache.maxOther)
+end
+
+local function refreshSkills()
+	for _, child in ipairs(skillScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	local autoSet = {}
+	for _, s in ipairs(skillsCache.autoSkills) do autoSet[s] = true end
+
+	if skillTab == "MAIN" then
+		for index, skill in ipairs(skillsCache.skills) do
+			local isAuto = autoSet[skill]
+			local isSel = selectedMainSkills[skill]
+			local row = makeFrame(skillScroll, "SkillRow_" .. index,
+				UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 0),
+				isAuto and Color3.fromRGB(40, 55, 70) or (isSel and Color3.fromRGB(48, 62, 50) or Color3.fromRGB(38, 42, 58)))
+			local lbl = makeLabel(row, "L", skill .. (isAuto and "  [ANTECEDENTE]" or ""),
+				UDim2.new(0, 8, 0, 0), UDim2.new(1, -100, 1, 0), 11)
+			lbl.TextXAlignment = Enum.TextXAlignment.Left
+			if isAuto then
+				lbl.TextColor3 = Color3.fromRGB(120, 200, 255)
+			else
+				local btn = makeButton(row, "B", isSel and "REMOVER" or "ESCOLHER",
+					UDim2.new(1, -90, 0, 2), UDim2.new(0, 82, 0, 26))
+				btn.TextSize = 10
+				btn.BackgroundColor3 = isSel and Color3.fromRGB(120, 30, 30) or Color3.fromRGB(48, 62, 110)
+				btn.Activated:Connect(function()
+					if isSel then
+						selectedMainSkills[skill] = nil
+					else
+						selectedMainSkills[skill] = true
+					end
+					refreshSkills()
+					refreshSkillSummary()
+				end)
+			end
+		end
+	else
+		for index, skill in ipairs(skillsCache.otherSkills) do
+			local isLocked = (skill == "Kits") and skillsCache.kitsLocked
+			local isSel = selectedOtherSkills[skill]
+			local row = makeFrame(skillScroll, "OtherRow_" .. index,
+				UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 0),
+				isLocked and Color3.fromRGB(40, 55, 70) or (isSel and Color3.fromRGB(48, 62, 50) or Color3.fromRGB(38, 42, 58)))
+			local lbl = makeLabel(row, "L", skill .. (isLocked and "  [ANTECEDENTE]" or ""),
+				UDim2.new(0, 8, 0, 0), UDim2.new(1, -100, 1, 0), 11)
+			lbl.TextXAlignment = Enum.TextXAlignment.Left
+			if isLocked then
+				lbl.TextColor3 = Color3.fromRGB(120, 200, 255)
+			else
+				local btn = makeButton(row, "B", isSel and "REMOVER" or "ESCOLHER",
+					UDim2.new(1, -90, 0, 2), UDim2.new(0, 82, 0, 26))
+				btn.TextSize = 10
+				btn.BackgroundColor3 = isSel and Color3.fromRGB(120, 30, 30) or Color3.fromRGB(48, 62, 110)
+				btn.Activated:Connect(function()
+					if isSel then
+						selectedOtherSkills[skill] = nil
+					else
+						selectedOtherSkills[skill] = true
+					end
+					refreshSkills()
+					refreshSkillSummary()
+				end)
+			end
+		end
+	end
+end
+
+function openSkillsStep()
+	skillsCache = GetSkillsInfo:InvokeServer(pendingBackground)
+	selectedMainSkills = {}
+	selectedOtherSkills = {}
+	skillTab = "MAIN"
+	refreshSkills()
+	refreshSkillSummary()
+	openWindow(skillFrame)
+end
+
+skillMainTab.Activated:Connect(function()
+	skillTab = "MAIN"
+	refreshSkills()
+end)
+
+skillOtherTab.Activated:Connect(function()
+	skillTab = "OTHER"
+	refreshSkills()
+end)
+
+skillBackButton.Activated:Connect(function()
+	closeWindow(skillFrame)
+	openWindow(incFrame)
+end)
+
+skillConfirmButton.Activated:Connect(function()
+	local mainCount = 0
+	for _ in pairs(selectedMainSkills) do mainCount = mainCount + 1 end
+	local otherCount = 0
+	for _ in pairs(selectedOtherSkills) do otherCount = otherCount + 1 end
+	if mainCount > skillsCache.maxMain then
+		showToast("Você escolheu " .. mainCount .. " perícias manuais, o máximo é " .. skillsCache.maxMain .. ".")
+		return
+	end
+	if otherCount > skillsCache.maxOther then
+		showToast("Você escolheu " .. otherCount .. " outros treinos, o máximo é " .. skillsCache.maxOther .. ".")
+		return
+	end
+	local mainList, otherList = {}, {}
+	for s in pairs(selectedMainSkills) do table.insert(mainList, s) end
+	for s in pairs(selectedOtherSkills) do table.insert(otherList, s) end
+	finishCreateCharacter(pendingRace, pendingAttrs, pendingBackground, pendingBackgroundFeature, pendingPositiveInc, pendingNegativeInc, mainList, otherList)
+end)
+
+attrConfirmButton.Activated:Connect(function()
+	local total = 0
+	for _, key in ipairs(attributeNames) do
+		total = total + attrCost(pendingAttrs[key])
+	end
+	local maxCost = pointBuyInfo and pointBuyInfo.maxCost or 20
+	if total > maxCost then
+		showToast("Você gastou " .. total .. " pontos, o máximo é " .. maxCost .. ".")
+		return
+	end
+	closeWindow(attrFrame)
+	openBackgroundStep()
+end)
+
+attrBackButton.Activated:Connect(function()
+	closeWindow(attrFrame)
+	openWindow(raceFrame)
+end)
+
+local function refreshRaces()
+	for _, child in ipairs(raceScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	local races = GetRaces:InvokeServer() or {}
+	for index, race in ipairs(races) do
+		local row = makeFrame(raceScroll, "RaceRow_" .. index,
+			UDim2.new(1, 0, 0, 64), UDim2.new(0, 0, 0, 0), Color3.fromRGB(38, 42, 58))
+		local rowName = makeLabel(row, "RName",
+			tostring(race.nome or "?") .. "  [" .. tostring(race.categoria or "") .. "]",
+			UDim2.new(0, 10, 0, 4), UDim2.new(1, -110, 0, 18), 13)
+		rowName.TextXAlignment = Enum.TextXAlignment.Left
+		local rowDesc = makeLabel(row, "RDesc", tostring(race.descricao or ""),
+			UDim2.new(0, 10, 0, 24), UDim2.new(1, -110, 0, 36), 10)
+		rowDesc.TextXAlignment = Enum.TextXAlignment.Left
+		rowDesc.TextWrapped = true
+		rowDesc.TextYAlignment = Enum.TextYAlignment.Top
+		rowDesc.TextColor3 = Color3.fromRGB(170, 170, 180)
+		local escolherBtn = makeButton(row, "REscolher", "ESCOLHER",
+			UDim2.new(1, -96, 0, 14), UDim2.new(0, 86, 0, 36))
+		escolherBtn.TextSize = 11
+		escolherBtn.Activated:Connect(function()
+			pendingRace = race.nome
+			closeWindow(raceFrame)
+			openAttrStep()
+		end)
+	end
+end
+
 local function openCreateWindow()
 	nameBox.Text = ""
 	createErrorLabel.Text = ""
@@ -823,26 +1777,10 @@ local function onCreateConfirm()
 		createErrorLabel.Text = "Digite um nome."
 		return
 	end
-	local result = CreateCharacter:InvokeServer(name)
-	if result and result.success then
-		local character = result.character
-		local nen = character.Nen or {}
-		local affinity = nen.Affinity or {}
-		local genius = nen.Genius or {}
-
-		resultRollLabel.Text = "🎲 Afinidade: " .. tostring(affinity.Roll or "-")
-		resultGeniusLabel.Text = "🎲 Genialidade: " .. tostring(genius.Roll or "-")
-			.. " (" .. tostring(genius.Tier or "-") .. ")"
-		resultTierLabel.Text = "Afinidade " .. tostring(affinity.Tier or "-")
-		resultCategoryLabel.Text = "Categoria: " .. tostring(nen.Category or character.Class or "?")
-		resultInfoLabel.Text = "Sua categoria de Nen define seus Hatsus.\nSua genialidade (2d20) afeta seu avanço.\nNo Domínio de Nen você treina os princípios."
-
-		closeWindow(createFrame)
-		closeWindow(listFrame)
-		openWindow(resultFrame)
-	else
-		createErrorLabel.Text = (result and result.error) or "Erro ao criar personagem."
-	end
+	pendingCreateName = name
+	closeWindow(createFrame)
+	refreshRaces()
+	openWindow(raceFrame)
 end
 
 -- ================= Eventos =================
@@ -853,6 +1791,7 @@ openButton.Activated:Connect(function()
 		return
 	end
 	refreshFicha()
+	setFichaTab("FICHA")
 	openWindow(fichaFrame)
 end)
 
@@ -863,11 +1802,6 @@ end)
 trocarButton.Activated:Connect(function()
 	refreshList()
 	openWindow(listFrame)
-end)
-
-hatsuButton.Activated:Connect(function()
-	refreshHatsus()
-	openWindow(hatsuFrame)
 end)
 
 xpButton.Activated:Connect(function()
@@ -890,10 +1824,6 @@ fecharListaButton.Activated:Connect(function()
 	closeWindow(listFrame)
 end)
 
-hatsuCloseButton.Activated:Connect(function()
-	closeWindow(hatsuFrame)
-end)
-
 confirmButton.Activated:Connect(onCreateConfirm)
 
 cancelButton.Activated:Connect(function()
@@ -903,6 +1833,7 @@ end)
 resultContinueButton.Activated:Connect(function()
 	closeWindow(resultFrame)
 	refreshFicha()
+	setFichaTab("FICHA")
 	openWindow(fichaFrame)
 end)
 
@@ -997,8 +1928,12 @@ end
 addDragBar(fichaFrame)
 addDragBar(listFrame)
 addDragBar(createFrame)
+addDragBar(raceFrame)
+addDragBar(attrFrame)
+addDragBar(bgFrame)
+addDragBar(incFrame)
+addDragBar(skillFrame)
 addDragBar(resultFrame)
-addDragBar(hatsuFrame)
 
 
 -- ================================================================
@@ -1062,11 +1997,11 @@ wizardNext.TextColor3 = Color3.fromRGB(0, 255, 157)
 
 local PESO_ABAS = {
 	{ label = "Todas", key = "Todas" },
-	{ label = "Leves", key = "Leve" },
-	{ label = "Moderadas", key = "Media" },
-	{ label = "Pesadas", key = "Pesada" },
-	{ label = "Variáveis", key = "Variavel" },
-	{ label = "Extremas", key = "Extrema" },
+	{ label = "Leves", key = "leve" },
+	{ label = "Moderadas", key = "moderada" },
+	{ label = "Pesadas", key = "pesada" },
+	{ label = "Variáveis", key = "variavel" },
+	{ label = "Extremas", key = "extrema" },
 	{ label = "Reforço", key = "Reforço" },
 }
 
@@ -1453,7 +2388,6 @@ wizardOpen = function(hatsuParaEditar)
 		return
 	end
 	local character = GetCharacter:InvokeServer()
-	wizardState.pnDisponivel = (character and character.PN) or 0
 	wizardState.level = (character and character.Level) or 1
 	wizardState.step = 1
 	wizardState.nome = ""
@@ -1461,10 +2395,13 @@ wizardOpen = function(hatsuParaEditar)
 	wizardState.restricoes = {}
 	wizardState.efeitoAba = "Gerais"
 	wizardState.pesoAba = "Todas"
-	wizardState.editId = nil
+	wizardState.editId = hatsuParaEditar and hatsuParaEditar.Id or nil
 	wizardState.natureza = "Ataque"
 	wizardState.ocultarBloqueados = true
-	wizardState.catalog = GetHatsuCatalog:InvokeServer("Reforço")
+	-- Passa o proprio Id (se editando) pra excluir do calculo de P.N gasto,
+	-- exatamente como o webapp faz com editingIdx.
+	wizardState.catalog = GetHatsuCatalog:InvokeServer(wizardState.editId)
+	wizardState.pnDisponivel = wizardState.catalog and wizardState.catalog.pnDisponivel or 0
 
 	if hatsuParaEditar then
 		wizardState.editId = hatsuParaEditar.Id
@@ -1518,8 +2455,7 @@ wizardNext.Activated:Connect(function()
 		}
 		local result
 		if wizardState.editId then
-			result = EditHatsu:InvokeServer(wizardState.editId,
-	build)
+			result = EditHatsu:InvokeServer(wizardState.editId, build)
 		else
 			result = CreateHatsuV2:InvokeServer(build)
 		end
@@ -1548,4 +2484,3 @@ end)
 hatsuCreateButton.Activated:Connect(function()
 	wizardOpen(nil)
 end)
-

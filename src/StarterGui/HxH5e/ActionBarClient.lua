@@ -135,9 +135,10 @@ buffsLayout.Parent = buffsFrame
 
 local logFrame = makeFrame(screenGui, "LogFrame",
 	UDim2.new(0, 300, 0, 200), UDim2.new(1, -312, 0, 12), Color3.fromRGB(10, 10, 10))
-logFrame.BackgroundTransparency = 0.15
+logFrame.BackgroundTransparency = 0.55
 logFrame.BorderSizePixel = 1
 logFrame.BorderColor3 = Color3.fromRGB(60, 60, 70)
+logFrame.Visible = false
 makeLabel(logFrame, "LogTitle", "LOG DE COMBATE",
 	UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 18), 11)
 
@@ -155,6 +156,9 @@ logList.Parent = logFrame
 local logLayout = Instance.new("UIListLayout")
 logLayout.Padding = UDim.new(0, 2)
 logLayout.Parent = logList
+
+local LOG_HIDE_DELAY = 5
+local logHideTimer = nil
 
 local function logMsg(text)
 	if not text or #text == 0 then
@@ -176,6 +180,18 @@ local function logMsg(text)
 			children[i]:Destroy()
 		end
 	end
+
+	-- So aparece quando ha atividade, some sozinho depois de 5s sem novas
+	-- entradas (o historico continua ali dentro, igual ao toast do FichaClient).
+	if hudVisible then
+		logFrame.Visible = true
+	end
+	if logHideTimer then
+		task.cancel(logHideTimer)
+	end
+	logHideTimer = task.delay(LOG_HIDE_DELAY, function()
+		logFrame.Visible = false
+	end)
 end
 
 -- ================= Mensagem =================

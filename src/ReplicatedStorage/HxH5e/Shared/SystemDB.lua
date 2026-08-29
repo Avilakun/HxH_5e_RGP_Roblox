@@ -1,9 +1,8 @@
--- HxH5e SystemDB (Shared) -- Nucleo (Parte 1/2)
--- Portado de js/data/config.js (SYSTEM_DB) do repo Criadores-HxH-5e/Ficha_HxH5e
--- via extracao automatizada (Node -> JSON -> Lua). Gerado em 2026-08-27.
--- Contem: classes (categorias de Nen), xpTable, skills, otherSkills,
--- pointBuyCosts, skillMap. Racas/antecedentes vem em SystemDB_Racas e
--- SystemDB_Antecedentes (proxima leva) por serem grandes demais para 1 modulo so.
+-- HxH5e SystemDB (Shared)
+-- Portado de js/data/config.js (SYSTEM_DB) do repo
+-- Criadores-HxH-5e/Ficha_HxH5e via HTTP + parser JS->Lua rodado dentro do Studio.
+-- v3: adicionadas inclinacoes (positivas/negativas).
+-- Gerado automaticamente em 2026-08-28.
 
 return {
 	classes = {
@@ -63,6 +62,1238 @@ return {
 		4000,
 		5000,
 		6500,
+	},
+	racas = {
+		{
+			nome = "Humano Comum",
+			descricao = "Raça mais comum no mundo.",
+			aumento_atributo = {
+				FOR = 1,
+				DES = 1,
+				CON = 1,
+				INT = 1,
+				SAB = 1,
+				PRE = 1,
+			},
+			fonte = "[3, 4]",
+			categoria = "Humanos e Tribos",
+		},
+		{
+			nome = "Fanalis",
+			descricao = "Composição física descomunal.",
+			aumento_atributo = {
+				FOR = 4,
+				CON = 2,
+				DES = -2,
+				INT = -2,
+				SAB = -2,
+				PRE = -2,
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Instinto Predatório",
+					efeito = "Quando um inimigo o atinge com um ataque corpo a corpo, você pode usar sua reação para atacar desarmado ou com arma leve corpo a corpo imediatamente contra o agressor, com os benefícios de um contra-ataque (mas não os malefícios). 1x/dia; ao final da rodada, ganha 1 de exaustão. Não funciona se o oponente estiver furtivo.",
+				},
+				{
+					nome = "Fúria Muscular",
+					efeito = "Quando seu PV cai abaixo de 20%, entra em vigor explosivo por 1 minuto: +2 em jogadas de ataque corpo a corpo e +1d6 de dano adicional em ataques físicos. Após o efeito, ganha 1 nível de exaustão.",
+				},
+				{
+					nome = "Pele de Ferro",
+					efeito = "Uma vez por dia, como reação, reduz à metade o dano de um ataque corpo a corpo que o acertaria.",
+				},
+			},
+			fonte = "[3, 4]",
+			categoria = "Humanos e Tribos",
+		},
+		{
+			nome = "Gyudondond",
+			descricao = "Homens Flauta.",
+			aumento_atributo = "Distribua 3 pontos em qualquer atributo",
+			opcoes_caracteristica = {
+				{
+					nome = "Alarido de Guerra",
+					efeito = "Membros da Tribo Gyudondond podem utilizar Intimidação como ação de movimento ao performar uma dança, desde que sua aura esteja ativa (qualquer Princípio ou Técnica de NEN, exceto Zetsu). Efeito adicional: se falhar a Intimidação, o alvo ainda sofre -1 em seu próximo teste de concentração, percepção ou intuição (por distração sonora). Limite: 1 vez por turno.",
+				},
+				{
+					nome = "Harmonia de Aura",
+					efeito = "Ação de movimento. A vibração sonora dos tubos corporais ajuda o fluxo da aura. Enquanto o Gyudondond estiver emitindo sons ritmados (passivamente ou propositalmente), recebe +1 em testes de concentração em seus Hatsus. Perde o bônus se estiver em silêncio absoluto, surdo ou impedido de se mover.",
+				},
+				{
+					nome = "Sonoridade Instintiva",
+					efeito = "Possui sensibilidade especial a sons e vibrações: detecta movimentações próximas (até 5m) mesmo sem visão, ao sentir vibrações no ar ou no solo. Testes de Percepção baseados em audição e toque recebem +2. Em contrapartida, ataques sonoros (ou ruídos intensos) causam +2 de dano contra ele, por hipersensibilidade auditiva.",
+				},
+			},
+			fonte = "[3, 4]",
+			categoria = "Humanos e Tribos",
+		},
+		{
+			nome = "Imuchack",
+			descricao = "Guerreiros gélidos.",
+			aumento_atributo = {
+				FOR = 2,
+				CON = 1,
+				INT = -2,
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Resistência Glacial",
+					efeito = "Reduz todo o dano de frio ou gelo em 50% (inclusive dano de aura elemental). Nenhum teste de Resistência Física sofre penalidade por frio. Pode manter Ten ativo por +2 turnos adicionais em ambientes gelados naturais.",
+				},
+				{
+					nome = "Caça Aquática",
+					efeito = "Nada sem penalidade de movimento dentro d'água e prende a respiração por Minutos = 1 + (CON × 2).",
+				},
+				{
+					nome = "Ritual de Maturidade",
+					efeito = "+1 ponto permanente em FOR ou CON.",
+				},
+			},
+			fonte = "[3, 4]",
+			categoria = "Humanos e Tribos",
+		},
+		{
+			nome = "Kurta",
+			descricao = "Olhos Escarlates.",
+			aumento_atributo = {
+				INT_ou_SAB = 2,
+			},
+			caracteristicas = {
+				{
+					nome = "Mudança Escarlate",
+					efeito = "+1 em todos os atributos enquanto os olhos estiverem vermelhos. Testes de Intimidação, Intuição e Concentração têm vantagem. Ao conhecer NEN, ativa consumindo 10% de aura. Duração: rodadas iguais ao bônus de Sabedoria (mín. 1). Pode ser usado um número de vezes por dia igual à proficiência. Após a ativação, sofre 1 nível de Exaustão pelo esforço físico e mental.",
+				},
+				{
+					nome = "Caça Fascinante",
+					efeito = "Você pode ser procurado e caçado, caso descubram seus olhos e sua origem.",
+				},
+				{
+					nome = "Sofrimento Profundo",
+					efeito = "Seus olhos se tornam escarlates após um estresse mental extenuante: estar com menos de 20% de vida; sofrer dano psíquico além da metade da vida; estar Amedrontado/Assustado/Aterrorizado por quem já lhe causou +25% de dano; ou ver amigos próximos morrendo.",
+				},
+			},
+			fonte = "[5, 6]",
+			categoria = "Clãs Especiais",
+		},
+		{
+			nome = "Formiga Quimera",
+			descricao = "Sem Antecedentes. Ver Regra.",
+			aumento_atributo = "Nenhum",
+			fagogenese_options = {
+				"Ave",
+				"Mamífero",
+				"Réptil/Anfíbio",
+				"Aquático",
+				"Inseto/Insectóide",
+				"Bestas Mágicas",
+			},
+			caracteristicas = {
+				{
+					nome = "Arma natural",
+					efeito = "Dano variado baseado na anatomia.",
+					opcoes = {
+						"Bico",
+						"Cauda",
+						"Chifres",
+						"Espinhos",
+						"Garras",
+						"Presas (Mordida)",
+						"Ferrão (Picada)",
+						"Tentáculos/Cipós",
+					},
+				},
+				{
+					nome = "Corpo Adaptável",
+					efeito = "Mudança corporal dramática ou adaptação ambiental.",
+					opcoes = {
+						"Metamorfose (Lagarta->Borboleta)",
+						"Constituição Respiratória (Aéreo)",
+						"Constituição Respiratória (Aquático)",
+						"Corpo Mole (Resistência Impacto)",
+					},
+				},
+				{
+					nome = "Criatura de Cerco",
+					efeito = "Dano crítico em construções e Constructos.",
+				},
+				{
+					nome = "Destreza animal",
+					efeito = "Vantagem em testes de resistência de Destreza.",
+				},
+				{
+					nome = "Escudo Natural/Carapaça",
+					efeito = "Resistência a tipos específicos de dano físico.",
+					opcoes = {
+						"Resistência a Corte",
+						"Resistência a Perfuração",
+						"Resistência a Impacto",
+					},
+				},
+				{
+					nome = "Evasão",
+					efeito = "Manobra de fuga que adiciona +2 na Reação de Esquiva.",
+					opcoes = {
+						"Aérea",
+						"Aquática",
+						"Terrestre",
+					},
+				},
+				{
+					nome = "Investida",
+					efeito = "Dano extra com movimento.",
+				},
+				{
+					nome = "Rasante",
+					efeito = "Manobra de ataque aéreo sem receber AdO.",
+				},
+				{
+					nome = "Regeneração",
+					efeito = "Recuperação gradual de Vida.",
+				},
+				{
+					nome = "Telepatia",
+					efeito = "Comunicação entre espécies.",
+					opcoes = {
+						"Ativa (Inferior)",
+						"Passiva (Superior)",
+					},
+				},
+				{
+					nome = "Tração Animal",
+					efeito = "Capacidade de carga aumentada e/ou salto dobrado.",
+				},
+				{
+					nome = "Veneno/Peçonha",
+					efeito = "Aplica veneno. Imune ao próprio veneno.",
+				},
+			},
+			fonte = "[1, 2]",
+			categoria = "Formigas Quimera",
+		},
+		{
+			nome = "Wormorfos",
+			descricao = "Povo verme.",
+			aumento_atributo = "Nenhum",
+			caracteristicas = {
+				{
+					nome = "Ecolocalização",
+					efeito = "Possui ecolocalização de 5m, não precisando depender dos sentidos de visão e audição quando submerso no solo.",
+				},
+				{
+					nome = "Deslocamento Subterrâneo",
+					efeito = "9m comum e 4,5m subterrâneo.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Corpo Malemolente",
+					efeito = "Resistência a dano de impacto/concussão (corpo menos rígido, adapta-se e \"engloba\" o impacto). Em contrapartida, sofre 1/4 (25%, arredondado para cima) a mais de dano perfurante ou cortante, por ter estrutura mais vulnerável a penetrações.",
+				},
+				{
+					nome = "Enterrada",
+					efeito = "Além de se submergir, pode puxar inimigos para o solo: usa \"Agarrão/Puxão\" contra a CA do alvo no lugar de um Teste Contestado. Em caso de sucesso, pode gastar a Ação Bônus para submergir puxando o alvo para o solo, aplicando as condições \"Caído\" e \"Imóvel\".",
+				},
+			},
+			fonte = "[5, 6]",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Elfos e Meio-Elfos",
+			descricao = "Herança feérica.",
+			aumento_atributo = "Escolha +2",
+			caracteristicas = {
+				{
+					nome = "Visão na Penumbra",
+					efeito = "Enxerga na penumbra a até 18m no escuro. Sua percepção capta o fluxo vital de plantas e animais, permitindo detectar seres vivos mesmo através de folhagens densas, desde que não estejam ocultos por Zetsu.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Pulsar Verde",
+					efeito = "Durante descansos ou meditações em ambientes naturais, recupera +1 ponto adicional de exaustão e reduz pela metade os efeitos de exaustão por clima, fome ou sede. Uma vez por combate, ganha +1 em qualquer teste de Resistência ou Reflexo até o final do turno.",
+				},
+				{
+					nome = "Fluxo Harmônico",
+					efeito = "Vantagem em testes de Percepção, Furtividade e Sobrevivência em ambientes naturais. Pode neutralizar/acalmar criaturas agressivas (teste de Carisma vs Sabedoria da criatura, 1x/missão).",
+				},
+				{
+					nome = "Expiração Vital",
+					efeito = "Vantagem em testes de resistência física contra venenos, toxinas e doenças.",
+				},
+			},
+			fonte = "[5, 6]",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Meio-Orcs",
+			descricao = "Guerreiros robustos.",
+			aumento_atributo = {
+				FOR = 1,
+				CON = 1,
+			},
+			caracteristicas = {
+				{
+					nome = "Visão na Penumbra",
+					efeito = "Enxerga na penumbra a até 18m no escuro.",
+				},
+				{
+					nome = "Resistência Implacável",
+					efeito = "Quando reduzido a 0 pontos de vida sem morrer completamente, pode voltar para 1 ponto de vida. Utilizável um número de vezes por dia igual à sua proficiência.",
+				},
+			},
+			fonte = "[5, 6]",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Anões",
+			descricao = "Robustos.",
+			aumento_atributo = {
+				CON = 2,
+			},
+			caracteristicas = {
+				{
+					nome = "Visão na Penumbra",
+					efeito = "Enxerga na penumbra a até 18m no escuro.",
+				},
+				{
+					nome = "Deslocamento",
+					efeito = "7,5m.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Resiliência Anã",
+					efeito = "Vantagem em testes de resistência contra toxinas e venenos, e resistência contra efeitos de fadiga ou envenenamento por aura.",
+				},
+				{
+					nome = "Estabilidade de Aura",
+					efeito = "Redução de 10% no custo para manter técnicas passivas (Ten constante, Gyo prolongado — gasto mínimo de 5%).",
+				},
+				{
+					nome = "Instinto de Forja",
+					efeito = "+2 em testes relacionados à criação, manutenção ou modificação de equipamentos (mesmo por meio de Hatsu). Identifica o equilíbrio de aura em objetos sem precisar de Gyo.",
+				},
+			},
+			fonte = "[7]",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Draconatos",
+			descricao = "Herança dragão.",
+			aumento_atributo = "Escolha +2",
+			caracteristicas = {
+				{
+					nome = "Resistência Ancestral",
+					efeito = "Resistência ao elemento ligado à cor do seu ancestral dracônico (ver tabela do manual: Azul/Bronze/Cobre-Elétrico ou Ácido, Branco-Frio, Latão/Ouro/Vermelho-Fogo, Negro-Ácido, Prata-Elétrico, Verde-Veneno).",
+				},
+				{
+					nome = "Arma de Sopro",
+					efeito = "Ação Principal: ataque em área, TR = 10 + CON + Proficiência. Dano 2d6 num fracasso (metade num sucesso); 3d6 no 6º nível; 4d6 no 11º nível. Formato e atributo do TR variam pela cor do ancestral (linha 1,5m/9m com TR de DES, ou cone de 4,5m com TR de DES/CON).",
+				},
+			},
+			fonte = "[7]",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Halflings",
+			descricao = "Pequenos e sortudos.",
+			aumento_atributo = {
+				DES = 1,
+				INT = 2,
+			},
+			caracteristicas = {
+				{
+					nome = "Tamanho Pequeno",
+					efeito = "Deslocamento de 7,5m.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Sortudo",
+					efeito = "Quando obtiver um 1 natural em uma jogada de ataque, teste de habilidade ou teste de resistência, pode rolar novamente e deve usar o novo resultado (1x por dia/sessão).",
+				},
+				{
+					nome = "Bravura",
+					efeito = "Vantagem em testes de resistência contra ficar Amedrontado/Intimidado.",
+				},
+				{
+					nome = "Agilidade Halfling",
+					efeito = "Pode mover-se através do espaço de qualquer criatura de tamanho maior que o seu.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Gnomos",
+			descricao = "Inventores.",
+			aumento_atributo = "Escolha +2",
+			caracteristicas = {
+				{
+					nome = "Tamanho Pequeno",
+					efeito = "Deslocamento de 7,5m.",
+				},
+				{
+					nome = "Visão na Penumbra",
+					efeito = "Enxerga na penumbra a até 18m no escuro.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Percepção Pequenina",
+					efeito = "Vantagem em testes de Percepção e Análise de Aura.",
+				},
+				{
+					nome = "Esperteza Gnômica",
+					efeito = "Vantagem em todos os testes de resistência de Inteligência, Sabedoria e Carisma contra Hatsu.",
+				},
+				{
+					nome = "Tamanho ao Meu Favor",
+					efeito = "+2 em testes de Esquiva; -1 em testes de Força física pura (empurrar, puxar ou levantar algo pesado).",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Golias",
+			descricao = "Gigantes de pedra.",
+			aumento_atributo = "Escolha +2",
+			caracteristicas = {
+				{
+					nome = "Tamanho Médio",
+					efeito = "Deslocamento de 9m.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Resistência de Pedra",
+					efeito = "Após receber um dano, reduz à metade o dano de impacto, perfurante ou cortante recebido — um número de vezes por dia igual à sua proficiência.",
+				},
+				{
+					nome = "Alvo Destroçado",
+					efeito = "Usa FOR em vez de DES para calcular a precisão em ataques de arremesso manual com armas.",
+				},
+				{
+					nome = "Corpo de Pedra",
+					efeito = "Vantagem em testes de resistência contra fadiga, frio e calor.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Modificados e Fantasia",
+		},
+		{
+			nome = "Neans",
+			descricao = "Andróides.",
+			aumento_atributo = "Varia",
+			caracteristicas = {
+				{
+					nome = "Tamanho e Deslocamento",
+					efeito = "Tamanho de Miúdo até Grande. Deslocamento igual a 2 tipos diferentes de movimento, dependendo de sua \"programação\".",
+				},
+				{
+					nome = "Atualização de Disco Rígido",
+					efeito = "Pode alterar no início de cada dia os pontos de atributo que recebe, enquanto reavalia e limpa dados de seu \"núcleo-processador e disco rígido\" na medida que evolui.",
+				},
+				{
+					nome = "Curto Circuito",
+					efeito = "Não fica exausto biologicamente, mas recebe a mesma condição ao entrar em curto-circuito por dano elétrico.",
+				},
+			},
+			fonte = "[8, 9]",
+			categoria = "Tecnológicos e Sobrenaturais",
+		},
+		{
+			nome = "Vampiros",
+			descricao = "Seres noturnos.",
+			aumento_atributo = {
+				INT = 2,
+				Físico = 1,
+			},
+			caracteristicas = {
+				{
+					nome = "Tamanho e Deslocamento",
+					efeito = "Tamanho Médio. Deslocamento de 9m comum e 3m planar (aumenta em 3m para cada casta que sobe: Vampiro, Lorde Vampiro, Conde Vampiro, Imperador Vampiro).",
+				},
+				{
+					nome = "Sugar Aura",
+					efeito = "Após um ataque de mordida bem-sucedido, pode gastar a Ação Bônus para o alvo rolar um TR de CON (CD = 10 + CON + Prof. do vampiro). Se falhar, o vampiro rouba 10% da aura dele, +10% para cada 5 pontos de diferença na falha.",
+				},
+				{
+					nome = "Exposição Solar",
+					efeito = "Após 2 rodadas sob a luz do sol, sofre -5 na CA até sair do contato com a luz. Aparições durante o dia em locais protegidos aplicam só -2 na CA.",
+				},
+			},
+			fonte = "[8, 9]",
+			categoria = "Tecnológicos e Sobrenaturais",
+		},
+		{
+			nome = "Djins",
+			descricao = "Nen Post-Mortem.",
+			aumento_atributo = "Escolha +2",
+			caracteristicas = {
+				{
+					nome = "Interpretação Travessa/Trapaceira",
+					efeito = "Uma vez por dia/cena/missão/semana, usuários de NEN podem rolar um dado aleatório entre a quantidade de suas Restrições/Condições para ignorar a que for sorteada naquela ativação. Regra geral: a duração do Hatsu escolhido precisa ser \"Instantânea\"; para os demais critérios, consulte seu mestre após a definição completa do Hatsu.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Tecnológicos e Sobrenaturais",
+		},
+		{
+			nome = "Bugbears",
+			descricao = "Brutais.",
+			aumento_atributo = {
+				FOR = 2,
+				DES = 1,
+			},
+			caracteristicas = {
+				{
+					nome = "Visão no Escuro",
+					efeito = "Enxerga na penumbra a até 18m como se fosse luz plena, e no escuro como se fosse penumbra.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Ataque Surpresa",
+					efeito = "Ao surpreender um alvo e acertá-lo no primeiro ataque do combate, causa 2d6 de dano extra e ataca com vantagem (por estar em furtividade). Só uma vez por alvo combatido.",
+				},
+				{
+					nome = "Instinto Adaptativo",
+					efeito = "Após três rodadas lutando contra o mesmo oponente, ganha +1 de acerto contra aquele alvo específico.",
+				},
+				{
+					nome = "Percepção Instintiva",
+					efeito = "Uma vez por combate, ao ser alvo de um ataque surpresa (ou de uma técnica oculta de Nen), pode reagir automaticamente gastando 2 reações em vez de precisar de 1 disponível normalmente.",
+				},
+				{
+					nome = "Pressão de Predador",
+					efeito = "Ao ativar Ren, causa um efeito intimidador mesmo sem querer: teste contestado de Intimidação com vantagem para o Bugbear; se o alvo falhar, fica intimidado até o final da rodada (contra animais/iniciantes pode causar Amedrontado). Usável um número de vezes por dia igual à proficiência.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Raças Incomuns",
+		},
+		{
+			nome = "Dahllans",
+			descricao = "Meio-Dríades.",
+			aumento_atributo = {
+				SAB = 4,
+				INT = -1,
+				PRE = -1,
+			},
+			caracteristicas = {
+				{
+					nome = "Visão no Escuro",
+					efeito = "Enxerga na penumbra a até 18m como se fosse luz plena, e no escuro como se fosse penumbra.",
+				},
+			},
+			opcoes_caracteristica = {
+				{
+					nome = "Empatia Natural",
+					efeito = "Testes sociais de Persuasão e Intuição recebem +1 contra seres conscientes. Sente emoções superficiais de seres vivos tocados ou em interação direta, desde que não estejam em Zetsu total — uma forma primitiva de leitura emocional, sem invadir a mente.",
+				},
+				{
+					nome = "Dr. Dolittle",
+					efeito = "Capaz de entender e falar com animais, podendo conversar, pedir informações ou apenas irritá-los. Insetos, animais terrestres, marinhos e bestas mágicas se encaixam, desde que possuam INT acima de 0.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Raças Incomuns",
+		},
+		{
+			nome = "Firbolgs",
+			descricao = "Guardiões.",
+			aumento_atributo = {
+				SAB = 2,
+				FOR = 1,
+			},
+			caracteristicas = {
+				{
+					nome = "Passo Oculto",
+					efeito = "Em ambiente de natureza (florestas e afins), pode usar Ação Bônus + movimento para se \"transportar\" de uma árvore/arbusto a outra sem ser percebido, em até 12m. Usável por dia um número de vezes igual ao modificador de Sabedoria.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Raças Incomuns",
+		},
+		{
+			nome = "Goblins",
+			descricao = "Maliciosos.",
+			aumento_atributo = "Escolha +2",
+			caracteristicas = {
+				{
+					nome = "Visão no Escuro",
+					efeito = "Enxerga na penumbra a até 9m como se fosse luz plena, e no escuro como se fosse penumbra.",
+				},
+				{
+					nome = "Fúria do Pequeno (Nanico)",
+					efeito = "Ao causar dano a uma criatura maior que você (ataque ou Hatsu), pode causar dano adicional igual à sua proficiência somada ao seu nível de personagem. Após usar, só pode usar de novo após terminar um descanso.",
+				},
+			},
+			fonte = "Extra",
+			categoria = "Raças Incomuns",
+		},
+	},
+	esforcoRacas = {
+		Fanalis = {
+			bonus = "+4 FOR ou CON e -2 nos demais atributos (bônus NÃO concedido ao Humano — só a característica)",
+			opcoes = {
+				{
+					nome = "Instinto Predatório",
+					efeito = "Quando um inimigo o atinge com um ataque corpo a corpo, você pode usar sua reação para atacar desarmado ou com arma leve corpo a corpo imediatamente contra o agressor, com os benefícios de um contra-ataque (mas não os malefícios). 1x/dia; ao final da rodada, ganha 1 de exaustão. Não funciona se o oponente estiver furtivo.",
+				},
+				{
+					nome = "Fúria Muscular",
+					efeito = "Quando seu PV cai abaixo de 20%, entra em vigor explosivo por 1 minuto: +2 em jogadas de ataque corpo a corpo e +1d6 de dano adicional em ataques físicos. Após o efeito, ganha 1 nível de exaustão.",
+				},
+				{
+					nome = "Pele de Ferro",
+					efeito = "Uma vez por dia, como reação, reduz à metade o dano de um ataque corpo a corpo que o acertaria.",
+				},
+			},
+		},
+		Imuchackk = {
+			bonus = "+2 FOR, +1 CON e -2 INT (bônus NÃO concedido ao Humano — só a característica)",
+			opcoes = {
+				{
+					nome = "Resistência Glacial",
+					efeito = "Reduz todo o dano de frio ou gelo em 50% (inclusive dano de aura elemental). Nenhum teste de Resistência Física sofre penalidade por frio. Pode manter Ten ativo por +2 turnos adicionais em ambientes gelados naturais.",
+				},
+				{
+					nome = "Caça Aquática",
+					efeito = "Nada sem penalidade de movimento dentro d'água e prende a respiração por Minutos = 1 + (CON × 2).",
+				},
+				{
+					nome = "Ritual de Maturidade",
+					efeito = "+1 ponto permanente em FOR ou CON.",
+				},
+			},
+		},
+		Elfo = {
+			bonus = "+2 INT ou SAB e +1 DES (bônus NÃO concedido ao Humano — só a característica)",
+			opcoes = {
+				{
+					nome = "Pulsar Verde",
+					efeito = "Durante descansos ou meditações em ambientes naturais, recupera +1 ponto adicional de exaustão e reduz pela metade os efeitos de exaustão por clima, fome ou sede. Uma vez por combate, ganha +1 em qualquer teste de Resistência ou Reflexo até o final do turno.",
+				},
+				{
+					nome = "Fluxo Harmônico",
+					efeito = "Vantagem em testes de Percepção, Furtividade e Sobrevivência em ambientes naturais. Pode neutralizar/acalmar criaturas agressivas (teste de Carisma vs Sabedoria da criatura, 1x/missão).",
+				},
+				{
+					nome = "Expiração Vital",
+					efeito = "Vantagem em testes de resistência física contra venenos, toxinas e doenças.",
+				},
+			},
+		},
+		Anão = {
+			bonus = "+2 CON (bônus NÃO concedido ao Humano — só a característica)",
+			opcoes = {
+				{
+					nome = "Resiliência Anã",
+					efeito = "Vantagem em testes de resistência contra toxinas e venenos, e resistência contra efeitos de fadiga ou envenenamento por aura.",
+				},
+				{
+					nome = "Estabilidade de Aura",
+					efeito = "Redução de 10% no custo para manter técnicas passivas (Ten constante, Gyo prolongado — gasto mínimo de 5%).",
+				},
+				{
+					nome = "Instinto de Forja",
+					efeito = "+2 em testes relacionados à criação, manutenção ou modificação de equipamentos (mesmo por meio de Hatsu). Identifica o equilíbrio de aura em objetos sem precisar de Gyo.",
+				},
+			},
+		},
+		Gnomo = {
+			bonus = "+2 DES ou INT (bônus NÃO concedido ao Humano — só a característica)",
+			opcoes = {
+				{
+					nome = "Percepção Pequenina",
+					efeito = "Vantagem em testes de Percepção e Análise de Aura.",
+				},
+				{
+					nome = "Esperteza Gnômica",
+					efeito = "Vantagem em todos os testes de resistência de Inteligência, Sabedoria e Carisma contra Hatsu.",
+				},
+				{
+					nome = "Tamanho ao Meu Favor",
+					efeito = "+2 em testes de Esquiva; -1 em testes de Força física pura (empurrar, puxar ou levantar algo pesado).",
+				},
+			},
+		},
+		Golias = {
+			bonus = "+2 FOR ou CON (bônus NÃO concedido ao Humano — só a característica)",
+			opcoes = {
+				{
+					nome = "Resistência de Pedra",
+					efeito = "Após receber um dano, reduz à metade o dano de impacto, perfurante ou cortante recebido — um número de vezes por dia igual à sua proficiência.",
+				},
+				{
+					nome = "Alvo Destroçado",
+					efeito = "Usa FOR em vez de DES para calcular a precisão em ataques de arremesso manual com armas.",
+				},
+				{
+					nome = "Corpo de Pedra",
+					efeito = "Vantagem em testes de resistência contra fadiga, frio e calor.",
+				},
+			},
+		},
+	},
+	antecedentes = {
+		{
+			nome = "Amigo dos Animais",
+			descricao = "Pessoas que se importam com o equilíbrio da natureza, mas que também adoram um desafio, andam pelas florestas e pântanos buscando encontrar criaturas fantásticas e desconhecidas. Por outro lado, muitos amigos dos animais são simplesmente amados pela natureza como se fizessem parte dela.",
+			proficiencias = "Escolha um Kit dentre os recebidos e Lidar com Animais e Natureza",
+			equipamento = {
+				"Qualquer arma simples",
+				"Qualquer arma simples",
+				"Kit de Caça e Rastreio de Criaturas ou Kit Médico",
+			},
+			caracteristicas = {
+				{
+					nome = "Habitat Natural",
+					efeito = "Animais e Feras (inclusive hostis) normalmente o consideram outra criatura não hostil. Seus companheiros são tratados como membros aliados do seu bando, desde que não atuem de forma hostil.",
+				},
+				{
+					nome = "Tarzan/Jane",
+					efeito = "De alguma forma você se acostumou com a linguagem de animais e feras. Ao passar um minuto interagindo com uma criatura não hostil você pode identificar alguma informação que ela já tenha conhecimento sobre o ambiente ou uma outra criatura.",
+				},
+				{
+					nome = "Companheiro Inabalável",
+					efeito = "Você tem um companheiro que te concede a Ação 'Ajuda' no turno dele. Ele te entende e obedece comandos simples.",
+				},
+			},
+		},
+		{
+			nome = "Aristocrata",
+			descricao = "Pessoas que entendem de riqueza, poder e privilégios. Mas não só entendem, elas desfrutam e estão acostumadas a isso. Através de algum título de nobreza, sua família exerce algum tipo de influência política significativa.",
+			proficiencias = "História e Religião",
+			equipamento = {
+				"Celular ou Câmera",
+				"Computador",
+				"Mochila 3 (Mala)",
+				"Qualquer arma simples",
+			},
+			caracteristicas = {
+				{
+					nome = "Posição Privilegiada",
+					efeito = "Você é bem-vindo na alta sociedade e as pessoas assumem que você tem o direito de estar onde está. As pessoas comuns fazem todos os esforços para acomodá-lo e evitar seu desprazer.",
+				},
+				{
+					nome = "Mauricinho / Patricinha",
+					efeito = "Você recebe toda semana uma quantia correspondente aos recursos financeiros de sua família de acordo com a tabela ao rolar 1d4.",
+				},
+			},
+		},
+		{
+			nome = "Artista",
+			descricao = "Pessoas com as mais variadas capacidades de entretenimento se aventuram no mundo artístico para realizar seus sonhos vivendo daquilo que amam ou buscando alcançar fama e dinheiro.",
+			proficiencias = "Kit de Ferramenta de Ofício e escolha 3 dentre: Acrobacia, Atuação, Intuição ou Prestidigitação",
+			equipamento = {
+				"Mala de Roupas ou Mochila Comum/Maleta",
+				"Câmera ou Celular",
+				"Kit de Ferramentas de Ofício",
+			},
+			caracteristicas = {
+				{
+					nome = "Tudo no @",
+					efeito = "Comerciantes que negociam com você reconhecem seu trabalho como artista, você tem chance (50%) de pagar suas compras com merchandising.",
+				},
+				{
+					nome = "Virando a Cadeira",
+					efeito = "Apresentar sua arte às pessoas antes de conversar ou negociar, faz com que fiquem fascinadas por você e tenham uma inclinação a concordar com sua opinião. Vantagem em testes de Carisma.",
+				},
+			},
+		},
+		{
+			nome = "Assassino",
+			descricao = "Assassinos famosos como a família Zoldyck e ainda outros, desenvolvem habilidades próprias para sua profissão e, com isso, se tornam peritos naquilo que fazem. A arte de matar de forma rápida.",
+			proficiencias = "Escolha um Kit dentre os recebidos e Acrobacia e Furtividade",
+			equipamento = {
+				"Adaga/Faca",
+				"Veneno Variante: 1 frasco",
+				"Pochete de Perna",
+				"Kit de disfarce ou Kit de Falsificação",
+			},
+			caracteristicas = {
+				{
+					nome = "Eco do Ritmo",
+					efeito = "Se concentrar em seu turno completo projeta um padrão hipnótico, fazendo com que todas as criaturas hostis tenham desvantagem em jogadas de ataque direcionadas a você.",
+				},
+				{
+					nome = "Sumidão",
+					efeito = "Vantagem em todos os testes de furtividade de qualquer natureza e não é descoberto ao realizar um ataque enquanto se está furtivo.",
+				},
+				{
+					nome = "Máquina de Matar",
+					efeito = "Dano dobrado (nos dados) em ataques realizados enquanto se está oculto/furtivo.",
+				},
+			},
+		},
+		{
+			nome = "Caçador de Feras",
+			descricao = "Nesse mundo existem diversas criaturas desconhecidas e hostis que se reproduzem nas sombras enquanto sobrepujam habitat naturais de outras criaturas.",
+			proficiencias = "Escolha um Kit dentre os recebidos e Natureza e Sobrevivência",
+			equipamento = {
+				"Espingarda Carregada ou Tazer",
+				"Kit de Caça e Rastreio de Criaturas ou Kit Antídoto",
+				"Qualquer arma simples ou Marcial e Rede",
+			},
+			caracteristicas = {
+				{
+					nome = "Temos que Pegar!",
+					efeito = "Vantagem em todos os testes relacionados a rastrear feras naturais e bestas mágicas (inclusive bestas de NEN).",
+				},
+				{
+					nome = "Desbravador",
+					efeito = "Você recebe +2 em sobrevivência e anula qualquer penalidade de sobrevivência não causadas por Hatsus.",
+				},
+			},
+		},
+		{
+			nome = "Cientista",
+			descricao = "Após muito estudo e dedicação, começam a arriscar a vida também no campo experimental para comprovar suas teorias e hipóteses.",
+			proficiencias = "Escolha 2 perícias com Kits e 3 dentre: História, Investigação, Medicina, Natureza, Prestidigitação, Religião ou Sobrevivência.",
+			equipamento = {
+				"Qualquer arma simples",
+				"1 Mochila Comum/Maleta",
+				"Kit Antídoto ou Kit Médico",
+				"Kit de Armas ou Kit Forense ou Kit de Hacker",
+			},
+			caracteristicas = {
+				{
+					nome = "Explorar Fraqueza",
+					efeito = "O personagem pode utilizar sua ação principal para analisar o oponente ou situação tendo vantagem no próximo ataque contra um inimigo ou teste baseado em inteligência.",
+				},
+				{
+					nome = "Mestre do Planejamento",
+					efeito = "Ao utilizar um item / kit escolhido no antecedente, você ganha um 1d6 para rolar em qualquer jogada ou teste cabível 3 vezes por dia.",
+				},
+			},
+		},
+		{
+			nome = "Criminoso",
+			descricao = "Essas pessoas normalmente vivem à margem da lei, desprezando e quebrando os regulamentos da sociedade.",
+			proficiencias = "Escolha um Kit dentre os recebidos e Enganação e Furtividade",
+			equipamento = {
+				"Qualquer arma simples ou Marcial",
+				"1 Pochete",
+				"Item do Tipo de Criminoso (Cleptomaníaco, Estelionatário, etc)",
+			},
+			caracteristicas = {
+				{
+					nome = "Cleptomaníaco",
+					efeito = "Inicia com celular roubado e kit de ferramentas de ofício.",
+				},
+				{
+					nome = "Estelionatário",
+					efeito = "Acesso a kits de falsificação ou disfarce para golpes.",
+				},
+				{
+					nome = "Político Corrupto",
+					efeito = "Possui informações privilegiadas (Pen-Drive) para manipular poder e influência.",
+				},
+				{
+					nome = "Traficante",
+					efeito = "Inicia com recursos financeiros de vendas ilícitas e contatos de fornecedores.",
+				},
+			},
+		},
+		{
+			nome = "Discípulo",
+			descricao = "Uma pessoa que é orientada por um mestre e normalmente continua seguindo suas orientações. Dependendo do mestre o discípulo pode se desenvolver em áreas diferentes a partir de suas aptidões.",
+			proficiencias = "Kit de Ferramenta de Ofício e Escolha 3 perícias quaisquer",
+			equipamento = {
+				"Celular com contato ou anotações de seu mestre",
+				"Qualquer arma simples ou Marcial",
+				"Kit de Ferramentas de Ofício",
+			},
+			caracteristicas = {
+				{
+					nome = "Abre-te Sésamo",
+					efeito = "Você consegue acessar alguns lugares ou pessoas e informações a partir da fama do seu mestre e da credibilidade que o nome lhe confere.",
+				},
+				{
+					nome = "Mateus 28.18-20",
+					efeito = "Seu mestre supostamente morreu ou desapareceu, porém ele lhe concedeu um ensinamento, poder, item, equipamento ou marca que te permite continuar sua história.",
+				},
+			},
+		},
+		{
+			nome = "Guarda Costas",
+			descricao = "Arduamente treinados para trabalhos físicos, guarda-costas podem ser pessoas dispostas a fazer um trabalho perigoso por dinheiro.",
+			proficiencias = "Atletismo e Intimidação",
+			equipamento = {
+				"Pistola",
+				"Qualquer arma simples ou Marcial",
+			},
+			caracteristicas = {
+				{
+					nome = "Artista Marcial",
+					efeito = "Você treinou técnicas e desenvolveu seu corpo ao máximo para o combate corpo-a-corpo. Seus golpes desarmados causam 1d6 no lugar de 1d4.",
+				},
+				{
+					nome = "Horário de Trabalho",
+					efeito = "Você consegue escolher uma pessoa para manter sua atenção de forma constante. Você tem vantagem e +2 em jogadas de percepção para encontrar essa pessoa.",
+				},
+			},
+		},
+		{
+			nome = "Líder",
+			descricao = "Você é uma pessoa que procura mudar a sociedade ao seu redor jogando na arena da política, pessoas e personalidades.",
+			proficiencias = "Escolha três entre Enganação, História, Investigação ou Persuasão",
+			equipamento = {
+				"1 pílula de Hemoglobina",
+				"1 pílula de Hemoglobina variante",
+				"Qualquer arma simples",
+				"Qualquer outro Kit",
+			},
+			caracteristicas = {
+				{
+					nome = "Presença de Liderança",
+					efeito = "Sua presença notável e inspiradora concede 1d4 (grau básico) que pode ser utilizado em qualquer jogada de seus aliados (cada um) até o fim do dia.",
+				},
+			},
+		},
+		{
+			nome = "Marinheiro",
+			descricao = "Você navegou em um navio pelo mar durante anos, enfrentando poderosas tormentas e monstros abissais.",
+			proficiencias = "Atletismo e Percepção",
+			equipamento = {
+				"Corrente Pesada ou Rede",
+				"Qualquer arma simples ou Marcial",
+			},
+			caracteristicas = {
+				{
+					nome = "Grande Herói da Marinha",
+					efeito = "Você não gasta passagem em navios, jatos, aviões e dirigíveis. Possui Documento de patente e Experiência de Convés.",
+				},
+				{
+					nome = "Imperador do Mar",
+					efeito = "Buscando mais poder você ouviu falar de NEN. Possui Experiência de Convés, Pistola ou Mosquete, Arma simples ou Marcial e Relógio à prova d'água.",
+				},
+			},
+		},
+		{
+			nome = "Mentalista",
+			descricao = "Conhecedores do funcionamento da mente, mentalistas são profissionais que trabalham com a realidade do pensamento ou com a ilusão.",
+			proficiencias = "Escolha um Kit dentre os recebidos e Enganação ou Persuasão e Intuição",
+			equipamento = {
+				"Qualquer arma simples",
+				"Kit de Falsificação ou Kit de Ferramenta de Ofício",
+			},
+			caracteristicas = {
+				{
+					nome = "Perceptivo",
+					efeito = "+2 em testes de Percepção.",
+				},
+				{
+					nome = "Referência Bibliográfica",
+					efeito = "Possui vantagem em todos os testes de Carisma contra humanoides com inteligência igual ou superior a Modificador 0.",
+				},
+			},
+		},
+		{
+			nome = "Negociante",
+			descricao = "Indivíduos acostumados a lidar com o público e, por isso, possuem facilidade na oratória e na persuasão.",
+			proficiencias = "Atuação, Persuasão e Prestidigitação",
+			equipamento = {
+				"Qualquer equipamento dentro do orçamento de 2.000 $",
+				"1 Mala de Roupas",
+			},
+			caracteristicas = {
+				{
+					nome = "Camelô",
+					efeito = "Quando vender qualquer item seu usado, você consegue vendê-lo com o custo oficial, desde que esteja funcional.",
+				},
+				{
+					nome = "Pechincheiro",
+					efeito = "Você consegue comprar qualquer item com desconto de 30% do valor de mercado (exceto armas de fogo e itens místicos).",
+				},
+			},
+		},
+		{
+			nome = "Ninja",
+			descricao = "Esgueirando-se na noite ou no meio da multidão, submetendo seus corpos à torturas para acostumarem-se com a dor e aplicando técnicas nunca antes vistas.",
+			proficiencias = "Escolha um Kit dentre os recebidos e Acrobacia ou Atletismo e Furtividade",
+			equipamento = {
+				"Armas Ninja Variadas",
+				"Kit de disfarce ou Kit de Falsificação",
+				"Explosivos Ninja",
+				"Qualquer arma simples ou Marcial",
+			},
+			caracteristicas = {
+				{
+					nome = "Furtividade Superior",
+					efeito = "Vantagem em testes de furtividade de qualquer natureza.",
+				},
+				{
+					nome = "Jutsu: Clone das Sombras",
+					efeito = "Cria um clone sólido. 5/5 PV, mesmas características sem NEN. Pode usar ação bônus para comandar clones.",
+				},
+				{
+					nome = "Jutsu: Substituição",
+					efeito = "Reação para fuga rápida com CA +5 e chance de aparecer em até 3m de onde estava.",
+				},
+			},
+		},
+		{
+			nome = "Órfão",
+			descricao = "Você cresceu nas ruas, sozinho, órfão e pobre. Você não tinha ninguém para cuidar de você ou te alimentar, então, aprendeu a se virar sozinho.",
+			proficiencias = "Escolha 2 perícias com Kits recebidos. Recebe ainda Furtividade e Intuição ou Prestidigitação",
+			equipamento = {
+				"Kit de Disfarce",
+				"Kit de Ferramentas de Ofício ou Kit de Armas",
+				"Qualquer arma simples",
+			},
+			caracteristicas = {
+				{
+					nome = "Segredos da Cidade",
+					efeito = "Você conhece os padrões secretos e o fluxo das cidades. Quando não em combate, você e companheiros podem viajar com o dobro da velocidade.",
+				},
+				{
+					nome = "Zé-Pequeno",
+					efeito = "Vantagem em todos os testes de Carisma quando se tratam de assuntos, pessoas e temas relacionados à máfia e ao conhecimento do submundo.",
+				},
+				{
+					nome = "Insignificante",
+					efeito = "Os inimigos tendem a te ignorar se você não fizer nada que os ameace e nem for o foco inicial de um conflito.",
+				},
+			},
+		},
+		{
+			nome = "Recluso",
+			descricao = "Você viveu em reclusão – ou em uma comunidade isolada como um monastério ou completamente sozinho – por um período importante da sua vida.",
+			proficiencias = "Escolha 1 perícia com Kit recebido e Intuição, Medicina e Religião",
+			equipamento = {
+				"Qualquer arma simples ou Marcial",
+				"Kit de Armas ou Kit de Caça e Rastreio de Criaturas",
+			},
+			caracteristicas = {
+				{
+					nome = "Monge",
+					efeito = "Vantagem em qualquer teste de constituição. Treinou técnicas corporais para o combate desarmado. Seus golpes desarmados causam 1d6 no lugar de 1d4.",
+				},
+				{
+					nome = "Escravo",
+					efeito = "Resistente a intimidação com ou sem aura. Pessoas com posição de autoridade alheias a você tem desvantagem em qualquer teste de carisma que não lhe beneficie.",
+				},
+			},
+		},
+		{
+			nome = "Soldado",
+			descricao = "A guerra sempre esteve na vida de soldados. Treinando desde jovem, estudando o uso das armas e armaduras, aprendendo técnicas básicas de sobrevivência.",
+			proficiencias = "Escolha 1 perícia com Kit recebido e Atletismo e Intimidação ou Sobrevivência",
+			equipamento = {
+				"Qualquer arma simples ou Marcial",
+				"Kit de Armas ou Kit de Caça e Rastreio de Criaturas",
+				"1 Mala de Roupas ou Mochila Comum/Maleta",
+			},
+			caracteristicas = {
+				{
+					nome = "Batedor",
+					efeito = "Acostumado a abrir caminho para investigar planos do inimigo (Vantagem em Investigação e Furtividade quando estiver sozinho ou 20 metros separado do grupo).",
+				},
+				{
+					nome = "Médico de Combate",
+					efeito = "Conhece procedimento que impede malefícios das pílulas de hemoglobina e suas variações e consegue aplicar em uma pessoa por dia.",
+				},
+				{
+					nome = "Atirador de Elite",
+					efeito = "Atacar alvos além da distância normal não impõe desvantagem. Ataques ignoram meia cobertura e três-quartos.",
+				},
+			},
+		},
+		{
+			nome = "Agente de Saúde",
+			descricao = "Um amor pela saúde dos outros, ou ainda um compromisso com a vida (seja por promessa ou dinheiro) domina todos dessa origem.",
+			proficiencias = "Kit Médico ou Antídoto e Medicina e Percepção",
+			equipamento = {
+				"Qualquer arma simples",
+				"Kit Médico",
+				"Kit Antídoto ou 3 pílulas de Hemoglobina variante",
+			},
+			caracteristicas = {
+				{
+					nome = "Técnica Medicinal",
+					efeito = "Sempre que cura um personagem, você adiciona seu INTx2 no total de PV curados.",
+				},
+				{
+					nome = "Primeiros Socorros",
+					efeito = "+3 em testes para estabilizar outros personagens. Aumenta o proveito do Kit de primeiros socorros.",
+				},
+				{
+					nome = "Médico Experimental",
+					efeito = "Pode fazer qualquer antídoto com kit de primeiros socorros e algum item da natureza ao redor.",
+				},
+			},
+		},
+		{
+			nome = "Atleta",
+			descricao = "Você tem um físico primoroso e bem trabalhado, você competia/compete em algum tipo de esporte, individual ou coletivo.",
+			proficiencias = "Atletismo e Acrobacia ou Intuição ou Percepção",
+			equipamento = {
+				"Qualquer arma simples",
+				"1 pílula de Hemoglobina variante: (Morfina)",
+			},
+			caracteristicas = {
+				{
+					nome = "Bolt",
+					efeito = "Seu físico primoroso lhe permite fazer uma ação de movimento extra ou saltar em distância metade de seu deslocamento.",
+				},
+				{
+					nome = "Implacável",
+					efeito = "Se falhar em um teste de resistência, você pode rolar novamente para o teste, mas é obrigado a manter o novo resultado.",
+				},
+			},
+		},
+		{
+			nome = "Chef",
+			descricao = "Um ótimo cozinheiro, com habilidades de impressionar qualquer um.",
+			proficiencias = "Com todos os kits recebidos e Sobrevivência, Percepção e História",
+			equipamento = {
+				"Qualquer arma simples",
+				"Kit de Cozinha",
+				"Kit de Caça e Rastreio de Criaturas",
+			},
+			caracteristicas = {
+				{
+					nome = "Sabor Único",
+					efeito = "Com os ingredientes você pode fazer qualquer um dos tipos de pratos, além de você ter um bônus de 1d6 em testes de CAR 'contra' pessoas que comeram sua comida.",
+				},
+				{
+					nome = "Sabor de Casa",
+					efeito = "Com os ingredientes certos, você pode fazer uma comida que vale por um descanso curto.",
+				},
+			},
+		},
+		{
+			nome = "Circense",
+			descricao = "Você sobrevivia com base em seu corpo e suas performances, fazendo malabares, piruetas e o que mais estivesse em seu arsenal.",
+			proficiencias = "Kit de Disfarce, Acrobacia, Atuação e Persuasão ou Enganação",
+			equipamento = {
+				"Qualquer arma simples",
+				"Kit de Disfarce",
+				"Roupa Chique",
+			},
+			caracteristicas = {
+				{
+					nome = "Performance",
+					efeito = "Você tem +5 em acrobacia ou prestidigitação para seus números.",
+				},
+				{
+					nome = "Mimetismo",
+					efeito = "Você consegue imitar sons que já tenha escutado, incluindo vozes.",
+				},
+			},
+		},
+		{
+			nome = "Gamer",
+			descricao = "Alguém que vivia em casa jogando os mais diversos jogos, talvez um famoso pro-player, talvez apenas alguém que fugia da realidade nos games.",
+			proficiencias = "Kit de Hacker, História e Intuição",
+			equipamento = {
+				"Qualquer arma simples",
+				"Dispositivo de PEM",
+				"Computador, Celular e Pen Drive",
+				"Kit de Hacker",
+			},
+			caracteristicas = {
+				{
+					nome = "Dormir não dá XP",
+					efeito = "Ao invés de descansar, algumas latas de enérgico te fazem passar por um descanso normal, porém da próxima vez você precisará descansar.",
+				},
+				{
+					nome = "Procrastinador",
+					efeito = "Você é acostumado a deixar tudo para a última hora, você consegue fazer tudo na metade do tempo, mas nem sempre ficará bom.",
+				},
+			},
+		},
+		{
+			nome = "Investigador",
+			descricao = "Um detetive, de renome ou não, trabalhando em busca de saber os mistérios do mundo, de casos policiais, ou daquilo que pegar mais.",
+			proficiencias = "Kit Forense, Investigação e Atuação ou Intuição ou Percepção ou Enganação",
+			equipamento = {
+				"Pistola",
+				"Kit Forense",
+				"Ponto de rádio",
+			},
+			caracteristicas = {
+				{
+					nome = "Detetive",
+					efeito = "O mestre sempre irá te falar uma coisa extra, sem precisar jogar investigação em toda cena de investigação.",
+				},
+				{
+					nome = "Rede de Contatos",
+					efeito = "Graças à influência da sua agência, você pode obter cinco informações por campanha sem custo.",
+				},
+			},
+		},
+		{
+			nome = "Piloto",
+			descricao = "Alguém que manda muito bem no volante, um piloto de fuga, um corredor de Fórmula 1. Pra que frear se eu posso acelerar e dar um drift?",
+			proficiencias = "Percepção, Intuição e Prestidigitação (Pilotar)",
+			equipamento = {
+				"Qualquer arma simples",
+				"Moto (pode pagar a diferença para ter um carro)",
+			},
+			caracteristicas = {
+				{
+					nome = "Manobras Maníacas",
+					efeito = "Com uma ação bônus, e desde que esteja dentro de um veículo, o jogador desvia de qualquer coisa menor que seu veículo automaticamente.",
+				},
+				{
+					nome = "Piloto de Fuga",
+					efeito = "Com uma ação normal você pressiona o acelerador como nunca, dobrando sua velocidade atual enquanto em um veículo.",
+				},
+				{
+					nome = "Experiência no Volante",
+					efeito = "Você recebe +3 em testes para pilotar.",
+				},
+			},
+		},
+		{
+			nome = "Religioso",
+			descricao = "Talvez um padre, um pastor, talvez um fanático de uma religião pouco conhecida. Mas com certeza alguém a procura de mais pessoas para o seu 'culto'.",
+			proficiencias = "Religião e História",
+			equipamento = {
+				"Qualquer arma simples",
+				"Bíblia, ou qualquer outro livro sagrado",
+			},
+			caracteristicas = {
+				{
+					nome = "Pregar",
+					efeito = "Você recebe +3 em teste de Religião para acalmar. E quando acalmar alguém, a pessoa acalmada receberá uma ação protagonista para gastar no próximo turno.",
+				},
+				{
+					nome = "Orador Público",
+					efeito = "Sempre que realizar um teste de Carisma (Persuasão) enquanto estiver falando para um grupo grande de pessoas, você adiciona o dobro do seu bônus de proficiência.",
+				},
+				{
+					nome = "Benção Divina",
+					efeito = "Após fazer uma oração a seu deus você se sente momentaneamente motivado e revigorado (seu modificador de SAB sobe um ponto).",
+				},
+			},
+		},
+		{
+			nome = "Mestre de RPG",
+			descricao = "Você viveu sua vida narrando feitos incríveis, mas cansou de contar a história dos outros e resolveu começar sua própria aventura épica.",
+			proficiencias = "Atuação, História e Enganação",
+			equipamento = {
+				"Celular e Um kit de dados",
+				"Computador",
+				"Casaco reforçado",
+			},
+			caracteristicas = {
+				{
+					nome = "Mestre do Improviso",
+					efeito = "Seus jogadores já botaram você em tanta enrascada que nada mais te surpreende, você se torna imune a condição 'surpreso' e tem vantagem em testes de carisma para convencer alguém de algo que você acabou de pensar.",
+				},
+				{
+					nome = "Sombra do Verdadeiro Mestre",
+					efeito = "Uma vez por missão casualmente seu personagem diz algo que vai virar verdade, você não escolhe o que será isso, tudo que seu personagem falar poderá ser escolhido pelo mestre.",
+				},
+			},
+		},
 	},
 	skills = {
 		"TR de FOR",
@@ -134,6 +1365,837 @@ return {
 		[28] = 44,
 		[29] = 47,
 		[30] = 50,
+	},
+	fqPresets = {
+		Ave = {
+			{
+				nome = "Águia",
+				desloc = "10,5m (Voo) / 9m Terrestre",
+				deslocamentoTipo = "voo",
+				deslocamentoValor = 10.5,
+				tracosSugeridos = {
+					{
+						nome = "Arma natural",
+						opcao = "Bico",
+					},
+					{
+						nome = "Rasante",
+					},
+				},
+			},
+			{
+				nome = "Beija-flor",
+				desloc = "7,5m (Voo) / 3m Terrestre",
+				deslocamentoTipo = "voo",
+				deslocamentoValor = 7.5,
+				tracosSugeridos = {
+					{
+						nome = "Evasão",
+						opcao = "Aérea",
+					},
+				},
+			},
+			{
+				nome = "Condor/Urubu",
+				desloc = "12m (Voo) / 9m Terrestre",
+				deslocamentoTipo = "voo",
+				deslocamentoValor = 12,
+				tracosSugeridos = {
+					{
+						nome = "Evasão",
+						opcao = "Aérea",
+					},
+				},
+			},
+		},
+		Mamífero = {
+			{
+				nome = "Coelho",
+				desloc = "10,5m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 10.5,
+				tracosSugeridos = {
+					{
+						nome = "Destreza animal",
+					},
+				},
+			},
+			{
+				nome = "Elefante",
+				desloc = "7,5m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 7.5,
+				tracosSugeridos = {
+					{
+						nome = "Tração Animal",
+					},
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Impacto",
+					},
+				},
+			},
+			{
+				nome = "Guepardo",
+				desloc = "12m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 12,
+				tracosSugeridos = {
+					{
+						nome = "Destreza animal",
+					},
+				},
+			},
+			{
+				nome = "Leão",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Arma natural",
+						opcao = "Presas (Mordida)",
+					},
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Corte",
+					},
+				},
+			},
+			{
+				nome = "Lobo",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Arma natural",
+						opcao = "Presas (Mordida)",
+					},
+				},
+			},
+			{
+				nome = "Macaco",
+				desloc = "9m (Escalada)",
+				deslocamentoTipo = "escalada",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Destreza animal",
+					},
+					{
+						nome = "Corpo Adaptável",
+						opcao = "Corpo Mole (Resistência Impacto)",
+					},
+				},
+			},
+			{
+				nome = "Rinoceronte",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Investida",
+					},
+					{
+						nome = "Tração Animal",
+					},
+				},
+			},
+			{
+				nome = "Tatu",
+				desloc = "7,5m Terrestre (+9m Subterrâneo)",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 7.5,
+				tracosSugeridos = {
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Impacto",
+					},
+					{
+						nome = "Investida",
+					},
+				},
+			},
+		},
+		["Réptil/Anfíbio"] = {
+			{
+				nome = "Camaleão",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Regeneração",
+					},
+				},
+			},
+			{
+				nome = "Cobra",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Corte",
+					},
+				},
+			},
+			{
+				nome = "Sapo",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Corpo Adaptável",
+						opcao = "Constituição Respiratória (Aquático)",
+					},
+					{
+						nome = "Veneno/Peçonha",
+					},
+				},
+			},
+			{
+				nome = "Tartaruga",
+				desloc = "6m (Nado)",
+				deslocamentoTipo = "aquatico",
+				deslocamentoValor = 6,
+				tracosSugeridos = {
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Impacto",
+					},
+				},
+			},
+		},
+		Aquático = {
+			{
+				nome = "Baleia",
+				desloc = "9m (Nado) / 9m Terrestre",
+				deslocamentoTipo = "aquatico",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Tração Animal",
+					},
+				},
+			},
+			{
+				nome = "Lagosta",
+				desloc = "9m (Nado) / 9m Terrestre",
+				deslocamentoTipo = "aquatico",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Corte",
+					},
+				},
+			},
+			{
+				nome = "Polvo",
+				desloc = "9m (Nado) / 9m Terrestre + Escalada sem teste",
+				deslocamentoTipo = "aquatico",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Arma natural",
+						opcao = "Tentáculos/Cipós",
+					},
+				},
+			},
+			{
+				nome = "Tubarão",
+				desloc = "12m (Nado) / 9m Terrestre",
+				deslocamentoTipo = "aquatico",
+				deslocamentoValor = 12,
+				tracosSugeridos = {
+					{
+						nome = "Arma natural",
+						opcao = "Presas (Mordida)",
+					},
+				},
+			},
+		},
+		["Inseto/Insectóide"] = {
+			{
+				nome = "Aranha",
+				desloc = "9m (Escalada) / 9m Terrestre",
+				deslocamentoTipo = "escalada",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Arma natural",
+						opcao = "Tentáculos/Cipós",
+					},
+				},
+			},
+			{
+				nome = "Besouro Bombardeiro",
+				desloc = "9m Terrestre / 3m (Voo)",
+				deslocamentoTipo = "voo",
+				deslocamentoValor = 3,
+				tracosSugeridos = {
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Impacto",
+					},
+				},
+			},
+			{
+				nome = "Escorpião",
+				desloc = "9m Terrestre",
+				deslocamentoTipo = "terrestre",
+				deslocamentoValor = 9,
+				tracosSugeridos = {
+					{
+						nome = "Veneno/Peçonha",
+					},
+					{
+						nome = "Escudo Natural/Carapaça",
+						opcao = "Resistência a Perfuração",
+					},
+				},
+			},
+			{
+				nome = "Mosquito",
+				desloc = "9m Terrestre / 6m (Voo)",
+				deslocamentoTipo = "voo",
+				deslocamentoValor = 6,
+				tracosSugeridos = {
+					{
+						nome = "Evasão",
+						opcao = "Aérea",
+					},
+					{
+						nome = "Arma natural",
+						opcao = "Ferrão (Picada)",
+					},
+				},
+			},
+		},
+		["Bestas Mágicas"] = {},
+	},
+	inclinacoes = {
+		positivas = {
+			{
+				nome = "Aliado",
+				custo = 1,
+				desc = "O personagem possui um velho amigo que pode lhe oferecer ajuda, informações e abrigo caso esteja próximo de sua residência.",
+			},
+			{
+				nome = "Contatos",
+				custo = 1,
+				desc = "Você tem um associado que lhe fornece informações úteis ou faz pequenos favores.",
+				hasOptions = true,
+				options = {
+					{
+						label = "Informação rápida",
+						custo = 1,
+						desc = "Recebe uma informação sobre a dúvida em até 24 horas por $500.",
+					},
+					{
+						label = "Informação de confiança",
+						custo = 2,
+						desc = "Recebe todas as informações disponíveis, explicando quais se podem confiar ($2000).",
+					},
+					{
+						label = "Informação barata",
+						custo = 1,
+						desc = "Diminui o custo da informação rápida de $500 para até $100.",
+					},
+				},
+			},
+			{
+				nome = "Corpo de Gigante",
+				custo = 5,
+				desc = "Você é enorme e por isso tem um nível a mais de vitalidade. +5 HP inicial e +3 por nível. O usuário tem que ficar com altura acima de 2,10m e não consegue utilizar armas leves e pequenas sem depender de uma técnica.",
+			},
+			{
+				nome = "Empatia com Animais",
+				custo = 1,
+				desc = "Você é talentoso em entender o comportamento dos animais. Superando um teste de INT = 10 você compreende o estado emocional do animal - amigável, assustado, hostil, faminto, etc.",
+			},
+			{
+				nome = "Fôlego",
+				custo = 2,
+				desc = "Dificilmente alguém terá sucesso te asfixiando ou afogando. Você consegue prender a respiração por 5-7 minutos fazendo esforço e 10-15 apenas nadando de forma despretensiosa ou se concentrando.",
+			},
+			{
+				nome = "Inventor",
+				custo = 1,
+				desc = "Modifica equipamentos ou cria novos. Selecione os benefícios:",
+				hasOptions = true,
+				options = {
+					{
+						label = "Propriedade de Dano",
+						custo = 1,
+						desc = "Dão até 1d8 de dano natural de qualquer propriedade (max. 3 propriedades).",
+					},
+					{
+						label = "Alcance/Alvos",
+						custo = 1,
+						desc = "Atingem até 2 alvos.",
+					},
+					{
+						label = "Compacto",
+						custo = 1,
+						desc = "Diminuem até 4 de espaço/peso.",
+					},
+					{
+						label = "Defensivo",
+						custo = 1,
+						desc = "Aumentam até 2 de CA.",
+					},
+				},
+			},
+			{
+				nome = "Ligação com a Máfia",
+				custo = 3,
+				desc = "O personagem tem certa influência com alguma família mafiosa e poderá pedir alguns favores, mas cuidado, é bom não exagerar, pois eles normalmente pedem favores em troca.",
+			},
+			{
+				nome = "Sentidos Aguçados",
+				custo = 1,
+				desc = "Seus sentidos são mais desenvolvidos (+2 em testes específicos).",
+				hasOptions = true,
+				options = {
+					{
+						label = "Audição Aguçada",
+						custo = 1,
+						desc = "+2 para escutar ou reparar sons incomuns (ex: engatilhar arma no escuro).",
+					},
+					{
+						label = "Paladar e Olfato",
+						custo = 1,
+						desc = "+2 para reparar gosto/cheiro. Bônus passivo antes de ingerir (evita veneno).",
+					},
+					{
+						label = "Tato Aguçado",
+						custo = 1,
+						desc = "+2 em detectar pelo toque ou Prestidigitação (ex: revistar suspeito).",
+					},
+					{
+						label = "Visão Aguçada",
+						custo = 1,
+						desc = "+2 em localizar visualmente, procurar armadilhas ou pegadas.",
+					},
+				},
+			},
+			{
+				nome = "Sorte Grande",
+				custo = 3,
+				desc = "Você pode re-rolar 1 dado por sessão ficando com o maior resultado.",
+			},
+			{
+				nome = "Tempo de Vida Estendido (Anomalia)",
+				custo = 3,
+				desc = "Independente de que raça pertença, você é uma anomalia. Seu ciclo de vida se estende em uma margem de 20 anos a mais em todos os períodos de desenvolvimento após a infância.",
+			},
+			{
+				nome = "Visão no Escuro",
+				custo = 2,
+				desc = "Você pode ver 9m no escuro como se fosse dia e não sofre penalidades de escuridão que não conte como bloqueio ou aplique cegueira.",
+			},
+			{
+				nome = "Ambidestria",
+				custo = 2,
+				desc = "Você luta com ambas as mãos com a mesma precisão e potência. Escolha um dos benefícios:",
+				hasOptions = true,
+				options = {
+					{
+						label = "Habilidoso em Combate Ágil",
+						custo = 3,
+						desc = "Ao empunhar armas leves em ambas as mãos, realize um ataque com Ação Bônus somando seu modificador no dano de ambos os ataques.",
+					},
+					{
+						label = "Habilidoso em Combate Bruto",
+						custo = 3,
+						desc = "Pode usar qualquer arma sem a propriedade 'Duas Mãos' uma em cada mão como se fosse leve (só ataca com as duas no mesmo turno com Atributo Evoluído ou ataque extra).",
+					},
+					{
+						label = "Habilidoso em Inventário",
+						custo = 2,
+						desc = "Pega e usa um item, ou troca de equipamento, usando a Ação Bônus.",
+					},
+					{
+						label = "Cirurgião/Malabarista",
+						custo = 2,
+						desc = "+4 em Prestidigitação ou testes de precisão manual que não sejam ataques.",
+					},
+				},
+			},
+			{
+				nome = "Apropriação Natural/Elemental",
+				custo = 3,
+				desc = "Pré-requisito: Categoria de Transmutação. Escolha um tipo de dano da tabela de forças da natureza igual ao elemento do seu Hatsu. Fica imune a esse tipo de dano e pode tratar 1 dado de dano como valor máximo ao rolar uma habilidade de transmutação elemental com esse elemento.",
+			},
+			{
+				nome = "Aura Gigantesca",
+				custo = 6,
+				desc = "Dotado de um dom invejável, você possui muito mais aura que pessoas comuns. +30% de Aura máxima.",
+			},
+			{
+				nome = "Boa Forma",
+				custo = 2,
+				desc = "Seu sistema ósseo e muscular é melhor que o normal. Pode ser escolhida de novo no futuro (quando não repetir a mesma opção).",
+				hasOptions = true,
+				options = {
+					{
+						label = "Boa Flexibilidade",
+						custo = 2,
+						desc = "+2 em testes de Escalada, testes de Fuga para se livrar de amarras e em tentativas de se libertar em combate corpo a corpo.",
+					},
+					{
+						label = "Ultra Flexibilidade",
+						custo = 4,
+						desc = "Boa Flexibilidade aprimorada — o bônus passa a ser +4.",
+					},
+				},
+			},
+			{
+				nome = "Destemido",
+				custo = 2,
+				desc = "Difícil de assustar ou intimidar. Vantagem em testes contra Intimidação (CAR ou FOR). Quando é mesmo assustado, sofre 2 de Estresse (dano psíquico) na Sanidade.",
+			},
+			{
+				nome = "Disparo de Aura",
+				custo = 3,
+				desc = "Passivo para Emissores. Pré-requisito: 80% de assimilação com Emissão (Reforço ou Manipulação). Pode desprender aura pura do corpo em formato de ataque aplicando REN sem precisar de uma arma (5% de aura = 1d6), e atacar à distância com aura ignorando meia ou três-quartos de cobertura.",
+			},
+			{
+				nome = "Especialista",
+				custo = 2,
+				desc = "Escolha até 2 assuntos (nichados) — dobra a proficiência em testes relacionados a eles.",
+			},
+			{
+				nome = "Explorador",
+				custo = 2,
+				desc = "Vantagem em testes de Sabedoria (Percepção) e Inteligência (Investigação) para detectar passagens/mecanismos secretos, e vantagem em TRs para evitar ou resistir a armadilhas ao explorar.",
+			},
+			{
+				nome = "Habitat Natural",
+				custo = 1,
+				desc = "Informe ao mestre um tipo de terreno e condição climática — sempre que estiver nesse ambiente, recebe um bônus em testes correspondente (ex: Ártico = +5 de resistência contra frio).",
+			},
+			{
+				nome = "Imponência Assustadora",
+				custo = 3,
+				desc = "Aparência e postura ameaçadoras concedem +3 em iniciativa e em testes de Intimidação.",
+			},
+			{
+				nome = "Memória Excepcional",
+				custo = 1,
+				desc = "Você se recorda com detalhes de situações e informações. Escolha uma alternativa:",
+				hasOptions = true,
+				options = {
+					{
+						label = "Memória Excepcional",
+						custo = 1,
+						desc = "Lembra automaticamente de tudo que concentrar atenção; recorda detalhes específicos com teste de INT = 10.",
+					},
+					{
+						label = "Memória Fotográfica",
+						custo = 3,
+						desc = "Como acima, mas também recorda detalhes específicos sempre — o mestre/jogadores devem lembrá-lo como se estivesse tudo anotado ou gravado.",
+					},
+				},
+			},
+			{
+				nome = "Noção do Perigo",
+				custo = 4,
+				desc = "O mestre faz, em segredo, um teste contra sua Percepção Passiva sempre que houver emboscada, armadilha ou perigo iminente; um sucesso avisa você a tempo de agir. Além disso, Percepção Passiva e Reações aumentam em 3.",
+			},
+			{
+				nome = "Palpite de Instinto",
+				custo = 3,
+				desc = "Percebe as intenções de quem conversa com você — se é boa/má ou fala verdade. +5 em testes de Intuição ou de CAR contra ser Enganado.",
+			},
+			{
+				nome = "Pulo do Gato",
+				custo = 3,
+				desc = "Subtrai automaticamente 5m de uma queda (trata como sucesso automático em Acrobacia para quedas simples) e reduz à metade o dano de quedas, desde que não esteja Agarrado/Preso, Atordoado/Incapacitado, Cego, Impedido, Inconsciente ou Paralisado.",
+			},
+			{
+				nome = "Resistência a Venenos",
+				custo = 2,
+				desc = "Anticorpos poderosos contra qualquer veneno não produzido por aura — +10 em testes de CON contra venenos.",
+			},
+			{
+				nome = "Tempo de Vida Estendido por Zetsu",
+				custo = 3,
+				desc = "Requisito: Zetsu Intermediário. Seu ciclo de vida se estende em 50 anos a mais em todos os períodos após a infância (70 anos se combinada com Tempo de Vida Estendido por Anomalia).",
+			},
+		},
+		negativas = {
+			{
+				nome = "Avareza",
+				valor = 2,
+				desc = "Você fica preocupado demais em conservar sua riqueza. Você deverá procurar sempre o melhor negócio. Faça um teste de autocontrole (SAB/INT ou CAR) toda vez que tiver que gastar algum dinheiro.",
+			},
+			{
+				nome = "Azar Grande",
+				valor = 3,
+				desc = "Você DEVE re-rolar seu primeiro acerto crítico no d20 da sessão.",
+			},
+			{
+				nome = "Desatencioso",
+				valor = 1,
+				desc = "Você consegue entender as emoções dos outros, mas não as suas intenções. Isto faz de você desajeitado em situações envolvendo manipulação social. Você é o clássico 'nerd' e sofre -1 para usar ou resistir a Testes de Influência.",
+			},
+			{
+				nome = "Dívida",
+				valor = 3,
+				desc = "Você deve um favor a alguém que te ajudou em um momento de dificuldade. Essa pessoa poderá te cobrar esse favor a qualquer momento e poderá ser qualquer coisa.",
+			},
+			{
+				nome = "Esquecido",
+				valor = 1,
+				desc = "Você tem dificuldade de se recordar de nomes, lugares, aparências e informações. É bem comum causar confusão por isso.",
+			},
+			{
+				nome = "Honestidade",
+				valor = 2,
+				desc = "Você precisa obedecer a lei sempre e dar o melhor de si para que os outros também o façam. Você assumirá também que os outros são honestos até saber o contrário.",
+			},
+			{
+				nome = "Indeciso",
+				valor = 5,
+				desc = "Você tem muita dificuldade para se decidir, recebendo -3 em rolagens de iniciativa. Além disso, sempre que se deparar com uma escolha, faça um teste simples de INT ou CAR CD 15.",
+			},
+			{
+				nome = "Inimigo",
+				valor = 1,
+				desc = "Alguém ou algo que ativamente tenta te prejudicar.",
+				hasOptions = true,
+				options = {
+					{
+						label = "Fraco",
+						valor = 1,
+						desc = "Inimigo chato, objetivos estúpidos, aparece para atrapalhar (Ex: Equipe Rocket).",
+					},
+					{
+						label = "Rival",
+						valor = 2,
+						desc = "Inimigo mediano, mesmos objetivos que você, fará de tudo para atrapalhar inclusive lutar.",
+					},
+					{
+						label = "Poderoso",
+						valor = 5,
+						desc = "Chefão maligno. Te caça para recrutar ou matar sem piedade.",
+					},
+				},
+			},
+			{
+				nome = "Inveja",
+				valor = 1,
+				desc = "Você tem uma reação muito ruim frente a qualquer um que pareça mais inteligente, mais atraente, poderoso ou em melhor situação do que a sua!",
+			},
+			{
+				nome = "Perda Auditiva",
+				valor = 1,
+				desc = "Você não é surdo, mas perdeu uma parte da audição e sofrerá um redutor de -3 em qualquer teste de Audição.",
+			},
+			{
+				nome = "Veracidade",
+				valor = 2,
+				desc = "Você odeia dizer uma mentira ou o faz muito mal. Ter que mentir pode fazer literalmente você ficar enjoado ou com peso na consciência (Condição Envenenado ou -5 Sanidade).",
+			},
+			{
+				nome = "Aleijado",
+				valor = 3,
+				desc = "Perna ruim ou ausente. -2 em qualquer perícia que exija o uso das pernas (incluindo Armas de Mão e combate desarmado, exceto combate à distância). Deslocamento Básico reduzido à metade.",
+			},
+			{
+				nome = "Anosmia/Ageusia",
+				valor = 1,
+				desc = "Não sente cheiro nem sabor de nada — não detecta certos perigos que outros perceberiam, e falha automaticamente em detectar gases nocivos (mas nunca é afetado por mau odor, e não tem problema em comer qualquer coisa — o que não te dá imunidade a venenos).",
+			},
+			{
+				nome = "Azar Perseguidor",
+				valor = 6,
+				desc = "Você é simplesmente azarado. Uma vez por sessão, o mestre usa uma 'Ação Protagonista' (1 d20 extra ou 3d6) para fazer algo dar errado com você — nunca o suficiente para matá-lo de imediato.",
+			},
+			{
+				nome = "Baixa Destreza Manual ou Consciência Corporal",
+				valor = 1,
+				desc = "Coordenação motora ruim: -2 em qualquer teste baseado em DES (aplicado no resultado final, não causa Atributo Penalizado).",
+			},
+			{
+				nome = "Caolho ou Estrábico",
+				valor = 2,
+				desc = "Tem apenas um olho, ou os dois não são confiáveis. -2 em armas de acuidade/à distância e em testes de percepção ou investigação baseados em visão.",
+			},
+			{
+				nome = "Cegueira",
+				valor = 3,
+				desc = "Perdeu a visão em algum acidente ou nasceu sem ela. Escolha um nível:",
+				hasOptions = true,
+				options = {
+					{
+						label = "Miopia/Astigmatismo",
+						valor = 3,
+						desc = "50% de perda de visão — reconhece pessoas a 1,5m; ataques à distância com desvantagem.",
+					},
+					{
+						label = "Glaucoma",
+						valor = 4,
+						desc = "80% de perda de visão — vê apenas vultos e localização, sem distinguir o que é cada um.",
+					},
+					{
+						label = "Condição Cego",
+						valor = 5,
+						desc = "Cegueira total — aplica a condição Cego permanentemente.",
+					},
+				},
+			},
+			{
+				nome = "Covardia",
+				valor = 3,
+				desc = "(Loucura Permanente) Requisito: CAR menor que 15. Diante de perigo, tenta fugir a menos que passe em um teste de coragem/vontade (INT/SAB/CAR, a critério do mestre). -3 em testes para resistir Intimidação.",
+			},
+			{
+				nome = "Código de Honra",
+				valor = 1,
+				desc = "Segue um conjunto de princípios 'honrosos' o tempo todo, mesmo sob risco de morte. Quebrar o código escolhido causa 5 de Estresse (dano psíquico) na Sanidade. Escolha um:",
+				hasOptions = true,
+				options = {
+					{
+						label = "Simples",
+						valor = 1,
+						desc = "Sempre se vingar de um insulto; o inimigo de um companheiro é seu inimigo; nunca atacar um companheiro fora de um duelo justo.",
+					},
+					{
+						label = "Cavalheiro",
+						valor = 2,
+						desc = "Nunca faltar com a palavra ou ignorar um insulto a você/sua fé/seus amados; nunca tirar vantagem desleal de um oponente.",
+					},
+					{
+						label = "Soldado",
+						valor = 3,
+						desc = "Lutar e morrer pela honra da tropa; seguir ordens e regras de guerra; tratar inimigos honrosos com respeito.",
+					},
+				},
+			},
+			{
+				nome = "Cleptomania",
+				valor = 2,
+				desc = "(Loucura Permanente) Compelido a roubar qualquer coisa que possa levar. Ao ter a chance, teste de autocontrole (CAR CD 15) — se falhar, deve roubar; se o furto falhar, sofre 5 de Estresse na Sanidade (recupera 2 ao furtar com sucesso depois).",
+			},
+			{
+				nome = "Desinteresse",
+				valor = 2,
+				desc = "(Loucura Permanente) Requisito: INT menor que 15. Dificilmente dá atenção a coisas fora do seu interesse. Teste de autocontrole (INT CD 15) diante de algo estranho/novo — se falhar, simplesmente ignora.",
+			},
+			{
+				nome = "Desvio de Atenção",
+				valor = 3,
+				desc = "(Loucura Permanente) Requisito: SAB menor que 15. Dificuldade de concentração prolongada — não pode repetir o mesmo teste mais de 3 vezes no mesmo dia sobre a mesma tarefa, e falha automaticamente em testes de provocação ao ser distraído.",
+			},
+			{
+				nome = "Dupla Personalidade",
+				valor = 4,
+				desc = "Você tem outra personalidade com os mesmos Dado de Vida e Raça, mas atributos/características distintos, que surge ao tirar 1 num dado. Você não controla quando ocorre a mudança, e uma personalidade não lembra o que a outra fez.",
+			},
+			{
+				nome = "Espírito de Lutador",
+				valor = 3,
+				desc = "Jamais desperdiça a chance de enfrentar alguém mais forte para provar que é o melhor — mesmo já tendo perdido várias vezes por esse impulso.",
+			},
+			{
+				nome = "Excesso de Confiança",
+				valor = 3,
+				desc = "Requisito: um atributo maior que 18. Acredita ser mais poderoso, inteligente ou competente do que realmente é, e precisa representar isso mesmo quando é perigoso.",
+			},
+			{
+				nome = "Fantasia",
+				valor = 1,
+				desc = "Crê fielmente em algo que só você acredita (uma 'verdade' criada por você mesmo). -3 em Intimidação e Persuasão contra quem já foi exposto à sua fantasia; deve interpretá-la ao menos 1x a cada 2 sessões.",
+			},
+			{
+				nome = "Impulsividade",
+				valor = 3,
+				desc = "(Loucura Permanente) Requisito: INT ou SAB menor que 15. Age primeiro e pensa depois. Teste de autocontrole (INT ou SAB CD 15) quando seria melhor esperar — se falhar, age; se impedido de agir, sofre Estresse na Sanidade por rodada.",
+			},
+			{
+				nome = "Instinto Assassino",
+				valor = 4,
+				desc = "(Loucura Permanente) Precisa matar alguém/algum animal a cada dois dias, ou entra em abstinência com -2 em tudo (dobra por dia adicional sem matar). Pode pegar Código de Honra de graça para simular ser um bom cidadão.",
+			},
+			{
+				nome = "Legião de Inimigos",
+				valor = 6,
+				desc = "Um grupo, facção ou corporação caça você por motivos diversos (ex: uma máfia por ter matado o filho de um chefe de família).",
+			},
+			{
+				nome = "Maneta (Braço)",
+				valor = 4,
+				desc = "Só tem um braço — não pode usar armas de duas mãos nem empunhar duas armas/escudo. -4 em tarefas normalmente feitas com dois braços (ex: Escalada, Luta Livre); sem redutor em tarefas de uma mão só.",
+			},
+			{
+				nome = "Megalomania",
+				valor = 5,
+				desc = "(Loucura Permanente) Crê ser destinado a grandes coisas. Escolha um objetivo grandioso — enquanto não o concluir, tem apenas metade dos pontos de Sanidade totais.",
+			},
+			{
+				nome = "Mente de Criança",
+				valor = 2,
+				desc = "(Loucura Permanente) Requisito: não ter antecedente Cientista/Especialista, Criminoso, Líder, Mentalista ou Negociante; não iniciar com tendência Maligna. Ainda tem inocência de criança e é mais facilmente enganado — -5 em testes de Intuição.",
+			},
+			{
+				nome = "Mudez/Surdez",
+				valor = 4,
+				desc = "Não pode falar ou ouvir. -3 em testes de Carisma; precisa de Prestidigitação (Libras) para passar mensagens a quem não conhece a linguagem de sinais.",
+			},
+			{
+				nome = "Nanismo",
+				valor = 2,
+				desc = "Não se beneficia do movimento concedido por Atletismo e recebe -1 em iniciativa.",
+			},
+			{
+				nome = "No Limite/Borderliner",
+				valor = 3,
+				desc = "(Loucura Permanente) Corre riscos absurdamente irracionais diante de perigo mortal e não pode fugir do desafio, ainda que pareça loucura para quem observa.",
+			},
+			{
+				nome = "Paranoia",
+				valor = 5,
+				desc = "(Loucura Permanente) Perdeu contato com a realidade — acredita que todos conspiram contra você e nunca confia em ninguém (nem em velhos amigos). Por não conseguir aquietar a mente, Zetsu recupera 5% menos aura em qualquer nível.",
+			},
+			{
+				nome = "Paraplégico",
+				valor = 6,
+				desc = "Não se beneficia do movimento de Atletismo e recebe -5 em iniciativa. Falha automaticamente em TRs de esquiva contra impacto no chão/pernas, é considerado caído em combate, e o movimento total é reduzido a 3m.",
+			},
+			{
+				nome = "Pesadelos",
+				valor = 3,
+				desc = "(Loucura Permanente) Atormentado todas as noites — o descanso longo recupera apenas metade dos recursos, e a eficiência de aura funciona de forma intermitente (a cada 2 usos).",
+			},
+			{
+				nome = "Procurado",
+				valor = 3,
+				desc = "Requisito: não começar com tendência Heróico. Caçado por seus atos por mercenários; a recompensa cresce com sua fama/renome. Valor sugerido de 1 a 8 pontos — negocie com o mestre conforme o momento da escolha.",
+			},
+			{
+				nome = "Teimosia",
+				valor = 1,
+				desc = "Sempre quer fazer as coisas do seu jeito — seus aliados podem precisar de vários testes de Persuasão para te convencer até de planos razoáveis.",
+			},
+			{
+				nome = "Trapaceiro",
+				valor = 3,
+				desc = "Requisito: tendência Caótico ou Maligno, e INT ou DES maior que 15. Sente prazer em enganar pessoas perigosas (nunca as inofensivas). Falhar duas vezes com a mesma pessoa, ou perder uma boa chance de trapacear, causa -3 de Estresse na Sanidade.",
+			},
+			{
+				nome = "Visões de Morte",
+				valor = 5,
+				desc = "(Loucura Permanente) Já esteve perto da morte — sempre que entra em combate, tem uma visão do oponente te matando. -10 em iniciativa; deve descrever essa visão em pensamento ou fala.",
+			},
+		},
 	},
 	skillMap = {
 		FOR = {

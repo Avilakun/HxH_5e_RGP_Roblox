@@ -48,6 +48,12 @@ local AddRestricao = getOrCreateRemote("AddRestricao")
 local BasicAttack = getOrCreateRemote("BasicAttack")
 local GetHatsuCatalog = getOrCreateRemote("GetHatsuCatalog")
 local CreateHatsuV2 = getOrCreateRemote("CreateHatsuV2")
+local GetRaces = getOrCreateRemote("GetRaces")
+local DeleteCharacter = getOrCreateRemote("DeleteCharacter")
+local GetBackgrounds = getOrCreateRemote("GetBackgrounds")
+local GetPointBuyInfo = getOrCreateRemote("GetPointBuyInfo")
+local GetInclinations = getOrCreateRemote("GetInclinations")
+local GetSkillsInfo = getOrCreateRemote("GetSkillsInfo")
 local BuffTick = getOrCreateEvent("BuffTick")
 local EditHatsu = getOrCreateRemote("EditHatsu")
 
@@ -224,9 +230,37 @@ SetActiveCharacter.OnServerInvoke = function(player, characterId)
 	return success
 end
 
-CreateCharacter.OnServerInvoke = function(player, rawName)
-	local result = CharacterService.CreateCharacter(player, rawName)
+CreateCharacter.OnServerInvoke = function(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
+	local result = CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
 	if result and result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+GetRaces.OnServerInvoke = function(player)
+	return CharacterService.GetRaces()
+end
+
+GetBackgrounds.OnServerInvoke = function(player)
+	return CharacterService.GetBackgrounds()
+end
+
+GetPointBuyInfo.OnServerInvoke = function(player)
+	return CharacterService.GetPointBuyInfo()
+end
+
+GetInclinations.OnServerInvoke = function(player)
+	return CharacterService.GetInclinations()
+end
+
+GetSkillsInfo.OnServerInvoke = function(player, backgroundName)
+	return CharacterService.GetSkillsInfo(backgroundName)
+end
+
+DeleteCharacter.OnServerInvoke = function(player, characterId)
+	local result = CharacterService.DeleteCharacter(player, characterId)
+	if result.success then
 		throttledSave(player)
 	end
 	return result
@@ -337,8 +371,9 @@ DeleteHatsu.OnServerInvoke = function(player, hatsuId)
 	return result
 end
 
-GetHatsuCatalog.OnServerInvoke = function(player, category)
-	return HatsuService.GetCatalog(category or "Reforço")
+GetHatsuCatalog.OnServerInvoke = function(player, excludeHatsuId)
+	local character = CharacterService.GetActiveCharacter(player)
+	return HatsuService.GetCatalog(character, excludeHatsuId)
 end
 
 CreateHatsuV2.OnServerInvoke = function(player, build)

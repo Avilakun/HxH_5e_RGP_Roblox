@@ -2,23 +2,33 @@
     HxH5e NenService (M1.3 — Princípios Avançados)
     Domínio de Nen completo: Fundamentais (Ten/Ren/Zetsu 0-3)
     + Avançados (En/In/Gyo/Shu/Ken/Ko/Ryu) com regra de desbloqueio.
-    Pool de P.N por nível (tabela de evolução do Manual de Hatsus).
+
+    Pool de P.N: CONFIRMADO no código-fonte do webapp (calcularPHBase em
+    transmutacao-db.js) que Domínio de Nen e Hatsus COMPARTILHAM a MESMA
+    reserva de P.N por nível — não são dois "baldes" separados. Gastar em
+    Ten/Ren/Zetsu reduz o que sobra pra Hatsu, e vice-versa. A tabela abaixo
+    é cópia exata do webapp (inclusive a queda no nível 6, que existe assim
+    no código original).
 ]]
 
 local NenService = {}
 
--- ================= Pool de P.N por nível (fonte: Manual de Hatsus) =================
+-- ================= Pool de P.N por nível (identico a calcularPHBase do webapp) =================
 local PN_POR_NIVEL = {
-	[0] = 0, [1] = 6, [2] = 8, [3] = 10, [4] = 12, [5] = 14,
-	[6] = 17, [7] = 20, [8] = 23, [9] = 26, [10] = 29, [11] = 32, [12] = 35,
+	[1] = 6, [2] = 8, [3] = 10, [4] = 12, [5] = 14,
+	[6] = 7, [7] = 10, [8] = 13, [9] = 16, [10] = 19, [11] = 22, [12] = 25,
 }
 
 local function getPHBase(character)
-	local level = character and character.Level or 0
-	return PN_POR_NIVEL[level] or 35
+	local level = (character and character.Level) or 0
+	if level < 1 then
+		return 0
+	end
+	if level > 12 then
+		level = 12
+	end
+	return PN_POR_NIVEL[level] or 25
 end
-
--- ================= Config =================
 
 local PRINCIPLE_COST = {
 	Ten = 0, Ren = 10, Zetsu = 0,
@@ -27,7 +37,6 @@ local PRINCIPLE_COST = {
 
 local ADVANCED_KEYS = { "En", "Inp", "Gyo", "Shu", "Ken", "Ko", "Ryu" }
 
--- Regra de desbloqueio (app)
 local ADVANCED_REQUIREMENTS = {
 	En = "Zetsu", Inp = "Zetsu", Gyo = "Zetsu",
 	Shu = "Ren", Ken = "Ren",
@@ -43,8 +52,6 @@ local function getDominio(character)
 	end
 	return nen.Dominio
 end
-
--- ================= Cálculos =================
 
 function NenService.CalcTenRD(character)
 	local d = getDominio(character)
@@ -132,8 +139,6 @@ function NenService.CalcAdvancedBonus(character, key)
 	return out
 end
 
--- ================= Pool de P.N =================
-
 function NenService.CalcPNSpentInDominio(character)
 	local d = getDominio(character)
 	local spent = 0
@@ -152,16 +157,32 @@ function NenService.CalcPNSpentInDominio(character)
 end
 
 function NenService.CalcPNDisponivel(character)
-	local total = getPHBase(character)
-	local dominio = NenService.CalcPNSpentInDominio(character)
-	return math.max(0, total - dominio)
+	return NenService.CalcPNDisponivelParaHatsu(character, nil)
 end
 
--- ================= Treino de Princípio =================
+function NenService.CalcPNSpentInHatsus(character, excludeHatsuId)
+	local spent = 0
+	for _, h in ipairs(character.Hatsus or {}) do
+		if h.Id ~= excludeHatsuId then
+			spent = spent + (h.PNUsados or 0)
+		end
+	end
+	return spent
+end
+
+function NenService.CalcPNDisponivelParaHatsu(character, excludeHatsuId)
+	local total = getPHBase(character)
+	local dominio = NenService.CalcPNSpentInDominio(character)
+	local outrosHatsus = NenService.CalcPNSpentInHatsus(character, excludeHatsuId)
+	return math.max(0, total - dominio - outrosHatsus)
+end
 
 function NenService.TrainPrinciple(character, principle)
 	if type(character) ~= "table" or type(principle) ~= "string" then
 		return { success = false, error = "Parâmetros inválidos." }
+	end
+	if (character.Level or 0) < 1 then
+		return { success = false, error = "Nen ainda não foi despertado. Isso só acontece a partir do nível 1 (Batismo e Despertar)." }
 	end
 	local d = getDominio(character)
 
@@ -206,8 +227,6 @@ function NenService.TrainPrinciple(character, principle)
 
 	return { success = false, error = "Princípio desconhecido: " .. tostring(principle) }
 end
-
--- ================= Ativação de Princípio =================
 
 local activeBuffs = {}
 
