@@ -1,7 +1,5 @@
 --[[
-    HxH5e FichaClient (COMPLETO — Parte 1 de 3)
-    Substitua o arquivo inteiro por esta Parte 1.
-    Depois cole a Parte 2 logo abaixo e depois a Parte 3.
+    HxH5e FichaClient (COMPLETO)
 ]]
 
 local Players = game:GetService("Players")
@@ -26,6 +24,7 @@ local GainXP = HxH5e:WaitForChild("GainXP")
 local AddGrau = HxH5e:WaitForChild("AddGrau")
 local AddRestricao = HxH5e:WaitForChild("AddRestricao")
 local GetRaces = HxH5e:WaitForChild("GetRaces")
+local GetRaceBonusInfo = HxH5e:WaitForChild("GetRaceBonusInfo")
 local DeleteCharacter = HxH5e:WaitForChild("DeleteCharacter")
 local GetBackgrounds = HxH5e:WaitForChild("GetBackgrounds")
 local GetPointBuyInfo = HxH5e:WaitForChild("GetPointBuyInfo")
@@ -34,7 +33,7 @@ local GetSkillsInfo = HxH5e:WaitForChild("GetSkillsInfo")
 
 local RESTRICAO_IDS = { "Compromisso", "Condicao", "Limitacao", "Requisito" }
 
--- Declarações antecipadas (as funções são definidas na Parte 3)
+-- Declarações antecipadas (as funções são definidas mais abaixo)
 local wizardOpen
 local openHatsuDetail
 
@@ -95,6 +94,7 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "HxH5eGui"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 10 -- fica acima do HUD (ActionBarClient), evita roubo de clique em botoes sobrepostos
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local openButton = makeButton(screenGui, "AbrirFichaButton", "ABRIR FICHA",
@@ -625,6 +625,41 @@ raceScroll.Parent = raceFrame
 local raceLayout = Instance.new("UIListLayout")
 raceLayout.Padding = UDim.new(0, 6)
 raceLayout.Parent = raceScroll
+
+-- ================= Janela de bônus racial (raças com "Escolha +2" etc.) =================
+
+local raceBonusFrame = makeFrame(screenGui, "RaceBonusWindow",
+	UDim2.fromOffset(360, 320), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+raceBonusFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+raceBonusFrame.Visible = false
+addCloseButton(raceBonusFrame)
+
+makeLabel(raceBonusFrame, "RaceBonusTitle", "BÔNUS RACIAL",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 16)
+
+local raceBonusInfoLabel = makeLabel(raceBonusFrame, "RaceBonusInfo", "",
+	UDim2.new(0, 16, 0, 38), UDim2.new(1, -32, 0, 36), 12)
+raceBonusInfoLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+raceBonusInfoLabel.TextWrapped = true
+
+local raceBonusRows = {}
+for i, key in ipairs(attributeNames) do
+	local y = 80 + (i - 1) * 34
+	local lbl = makeLabel(raceBonusFrame, "RaceBonusLbl_" .. key, key .. ": +0",
+		UDim2.new(0, 16, 0, y), UDim2.new(0, 180, 0, 28), 14)
+	local minusBtn = makeButton(raceBonusFrame, "RaceBonusMinus_" .. key, "-",
+		UDim2.new(0, 200, 0, y), UDim2.new(0, 30, 0, 28))
+	local plusBtn = makeButton(raceBonusFrame, "RaceBonusPlus_" .. key, "+",
+		UDim2.new(0, 234, 0, y), UDim2.new(0, 30, 0, 28))
+	local chooseBtn = makeButton(raceBonusFrame, "RaceBonusChoose_" .. key, "ESCOLHER " .. key,
+		UDim2.new(0, 16, 0, y), UDim2.new(0, 248, 0, 28))
+	chooseBtn.Visible = false
+	raceBonusRows[key] = { label = lbl, minus = minusBtn, plus = plusBtn, choose = chooseBtn }
+end
+
+local raceBonusConfirmButton = makeButton(raceBonusFrame, "RaceBonusConfirm", "CONFIRMAR",
+	UDim2.new(0, 16, 1, -46), UDim2.new(1, -32, 0, 36))
+raceBonusConfirmButton.TextColor3 = Color3.fromRGB(0, 255, 157)
 
 -- ================= Janela de atributos (compra de pontos) =================
 
@@ -1238,13 +1273,14 @@ end
 
 local pendingCreateName = nil
 local pendingRace = nil
+local pendingRaceBonusAllocations = nil
 local pendingAttrs = nil
 local pointBuyInfo = nil -- { costs = {...}, maxCost = 20, defaultValue = 10 }
 local backgroundsCache = nil
 local selectedBgName = nil
 
 local function finishCreateCharacter(raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
-	local result = CreateCharacter:InvokeServer(pendingCreateName, raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
+	local result = CreateCharacter:InvokeServer(pendingCreateName, raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, pendingRaceBonusAllocations)
 	if result and result.success then
 		local character = result.character
 		local nen = character.Nen or {}
@@ -1307,7 +1343,94 @@ local function refreshAttrUI()
 	attrPointsLabel.TextColor3 = (total > maxCost) and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 220, 120)
 end
 
-local function openAttrStep()
+-- ================= Passo: Bônus racial (raças com escolha manual) =================
+
+local raceBonusState = { req = nil, allocations = {} }
+
+local function refreshRaceBonusUI()
+	local req = raceBonusState.req
+	if not req then
+		return
+	end
+	if req.type == "wildcard" then
+		local total = 0
+		for _, key in ipairs(attributeNames) do
+			local amt = raceBonusState.allocations[key] or 0
+			total = total + amt
+			raceBonusRows[key].label.Text = key .. ": +" .. amt
+		end
+		raceBonusInfoLabel.Text = "Distribua " .. req.amount .. " ponto(s) entre quaisquer atributos. Alocado: " .. total .. "/" .. req.amount
+		raceBonusConfirmButton.BackgroundColor3 = (total == req.amount) and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(38, 42, 58)
+	elseif req.type == "choice" then
+		raceBonusInfoLabel.Text = "Escolha um atributo pra receber +" .. req.amount .. ":"
+	end
+end
+
+function openRaceBonusStep(req)
+	raceBonusState.req = req
+	raceBonusState.allocations = {}
+	for _, key in ipairs(attributeNames) do
+		local row = raceBonusRows[key]
+		local isAllowed = (req.type == "wildcard") or (req.type == "choice" and table.find(req.keys, key))
+		row.label.Visible = (req.type == "wildcard")
+		row.minus.Visible = (req.type == "wildcard")
+		row.plus.Visible = (req.type == "wildcard")
+		row.choose.Visible = (req.type == "choice" and isAllowed)
+	end
+	refreshRaceBonusUI()
+	openWindow(raceBonusFrame)
+end
+
+for _, key in ipairs(attributeNames) do
+	raceBonusRows[key].minus.Activated:Connect(function()
+		if raceBonusState.req and raceBonusState.req.type == "wildcard" then
+			raceBonusState.allocations[key] = math.max(0, (raceBonusState.allocations[key] or 0) - 1)
+			refreshRaceBonusUI()
+		end
+	end)
+	raceBonusRows[key].plus.Activated:Connect(function()
+		if raceBonusState.req and raceBonusState.req.type == "wildcard" then
+			local total = 0
+			for _, k in ipairs(attributeNames) do total = total + (raceBonusState.allocations[k] or 0) end
+			if total < raceBonusState.req.amount then
+				raceBonusState.allocations[key] = (raceBonusState.allocations[key] or 0) + 1
+				refreshRaceBonusUI()
+			end
+		end
+	end)
+	raceBonusRows[key].choose.Activated:Connect(function()
+		if raceBonusState.req and raceBonusState.req.type == "choice" then
+			pendingRaceBonusAllocations = { [key] = raceBonusState.req.amount }
+			closeWindow(raceBonusFrame)
+			openAttrStep()
+		end
+	end)
+end
+
+raceBonusConfirmButton.Activated:Connect(function()
+	local req = raceBonusState.req
+	if not req or req.type ~= "wildcard" then
+		return
+	end
+	local total = 0
+	local allocCopy = {}
+	for _, key in ipairs(attributeNames) do
+		local amt = raceBonusState.allocations[key] or 0
+		total = total + amt
+		if amt > 0 then
+			allocCopy[key] = amt
+		end
+	end
+	if total ~= req.amount then
+		showToast("Aloque exatamente " .. req.amount .. " ponto(s) antes de confirmar.")
+		return
+	end
+	pendingRaceBonusAllocations = allocCopy
+	closeWindow(raceBonusFrame)
+	openAttrStep()
+end)
+
+function openAttrStep()
 	if not pointBuyInfo then
 		pointBuyInfo = GetPointBuyInfo:InvokeServer()
 	end
@@ -1760,7 +1883,13 @@ local function refreshRaces()
 		escolherBtn.Activated:Connect(function()
 			pendingRace = race.nome
 			closeWindow(raceFrame)
-			openAttrStep()
+			local req = GetRaceBonusInfo:InvokeServer(race.nome)
+			if req then
+				openRaceBonusStep(req)
+			else
+				pendingRaceBonusAllocations = nil
+				openAttrStep()
+			end
 		end)
 	end
 end
@@ -1929,6 +2058,7 @@ addDragBar(fichaFrame)
 addDragBar(listFrame)
 addDragBar(createFrame)
 addDragBar(raceFrame)
+addDragBar(raceBonusFrame)
 addDragBar(attrFrame)
 addDragBar(bgFrame)
 addDragBar(incFrame)
@@ -1967,14 +2097,14 @@ local pesoAbasFrame = makeFrame(wizardFrame, "PesoAbas",
 pesoAbasFrame.BackgroundTransparency = 1
 
 local efeitoAbasFrame = makeFrame(wizardFrame, "EfeitoAbas",
-	UDim2.new(1, -32, 0, 28), UDim2.new(0, 16, 0, 82), Color3.fromRGB(0, 0, 0))
+	UDim2.new(1, -32, 0, 58), UDim2.new(0, 16, 0, 82), Color3.fromRGB(0, 0, 0))
 efeitoAbasFrame.BackgroundTransparency = 1
 efeitoAbasFrame.Visible = false
 
 local wizardScroll = Instance.new("ScrollingFrame")
 wizardScroll.Name = "WizardScroll"
-wizardScroll.Size = UDim2.new(1, -32, 1, -170)
-wizardScroll.Position = UDim2.new(0, 16, 0, 114)
+wizardScroll.Size = UDim2.new(1, -32, 1, -200)
+wizardScroll.Position = UDim2.new(0, 16, 0, 144)
 wizardScroll.BackgroundTransparency = 1
 wizardScroll.ScrollBarThickness = 6
 wizardScroll.BorderSizePixel = 0
@@ -2208,11 +2338,27 @@ local function wizardRender()
 				child:Destroy()
 			end
 		end
-		local grupos = { "Gerais", "Reforço" }
+		local grupos = {}
+		do
+			local vistos = {}
+			for _, e in ipairs(cat.effects) do
+				if not vistos[e.grupo] then
+					vistos[e.grupo] = true
+					table.insert(grupos, e.grupo)
+				end
+			end
+			table.sort(grupos, function(a, b)
+				if a == "Gerais" then return true end
+				if b == "Gerais" then return false end
+				if a == cat.categoria then return true end
+				if b == cat.categoria then return false end
+				return a < b
+			end)
+		end
 		for gi, grupo in ipairs(grupos) do
 			local aba = makeButton(efeitoAbasFrame, "Aba_" .. grupo, grupo,
-				UDim2.new(0, (gi - 1) * 100, 0, 0), UDim2.new(0, 94, 0, 26))
-			aba.TextSize = 12
+				UDim2.new(0, (gi - 1) * 78, 0, 0), UDim2.new(0, 74, 0, 24))
+			aba.TextSize = 10
 			aba.BackgroundColor3 = (wizardState.efeitoAba == grupo)
 				and Color3.fromRGB(0, 255, 157) or Color3.fromRGB(38, 42, 58)
 			aba.TextColor3 = (wizardState.efeitoAba == grupo)
@@ -2225,7 +2371,7 @@ local function wizardRender()
 
 		local ocultarBtn = makeButton(efeitoAbasFrame, "OcultarBloqueados",
 			wizardState.ocultarBloqueados and "✓ Ocultar bloqueados" or "✗ Mostrar bloqueados",
-			UDim2.new(0, 210, 0, 0), UDim2.new(0, 150, 0, 26))
+			UDim2.new(0, 0, 0, 30), UDim2.new(0, 180, 0, 26))
 		ocultarBtn.TextSize = 10
 		ocultarBtn.BackgroundColor3 = wizardState.ocultarBloqueados
 			and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(60, 60, 80)
@@ -2238,7 +2384,7 @@ local function wizardRender()
 		local ultimoNivel = nil
 		for _, e in ipairs(ordenados) do
 			if e.grupo == wizardState.efeitoAba then
-				local bloqueado = (e.nivel or 1) > wizardState.level
+				local bloqueado = (e.nivel or 1) > (e.nivelMaxAcessivel or wizardState.level)
 				if not (wizardState.ocultarBloqueados and bloqueado) then
 					if e.nivel ~= ultimoNivel then
 						ultimoNivel = e.nivel
@@ -2257,7 +2403,7 @@ local function wizardRender()
 						UDim2.new(0, 8, 0, 3), UDim2.new(0, 300, 0, 18), 12)
 					lbl.TextXAlignment = Enum.TextXAlignment.Left
 					local desc = makeLabel(row, "Desc",
-						bloqueado and ("🔒 Requer Nível " .. tostring(e.nivel or 1)) or tostring(e.desc or ""),
+						bloqueado and ("🔒 Requer acesso nível " .. tostring(e.nivel or 1) .. " em " .. tostring(e.grupo) .. " (seu acesso vai até " .. tostring(e.nivelMaxAcessivel or 0) .. ")") or tostring(e.desc or ""),
 						UDim2.new(0, 8, 0, 21), UDim2.new(0, 360, 0, 22), 9)
 					desc.TextXAlignment = Enum.TextXAlignment.Left
 					desc.TextWrapped = true

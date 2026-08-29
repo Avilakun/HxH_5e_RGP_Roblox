@@ -1,26 +1,17 @@
 --[[
-    HxH5e HatsuService v8 (acesso cruzado entre categorias de Nen)
-    Diferenca da v7: alem da propria categoria (100%), o personagem agora
-    enxerga e pode comprar efeitos de categorias ALIADAS (hexagono de
-    afinidade do webapp: 80/60/40%), limitados por um nivel de acesso que
-    cresce com o nivel do personagem. Tudo validado no servidor, nao so
-    escondido/mostrado no cliente.
+    HxH5e HatsuService v7 (todas as 6 categorias de Nen)
+    Diferenca da v6: nao esta mais preso so em Reforco. Qualquer categoria
+    (INTENSIFICAÇÃO/TRANSMUTAÇÃO/MATERIALIZAÇÃO/MANIPULAÇÃO/EMISSÃO/
+    ESPECIALIZAÇÃO) e derivada de character.Nen.Category, e o catalogo de
+    efeitos/restricoes daquela categoria e montado e cacheado sob demanda.
 
     Simplificacoes conhecidas (documentadas, nao bloqueiam testes basicos):
     - Pre-requisito de efeito por NOME (ex.: "Nivel 2 - Recuperacao Veloz"
       exige TER comprado Recuperacao Veloz antes) so valida o numero do
       nivel, nao o efeito-pre-requisito textual.
-    - Acesso a Especializacao via regra especial (checkEspecializacaoAccess
-      do webapp: piramide de restricoes de Manipulacao/Materializacao)
-      AINDA NAO implementado — Especializacao so fica acessivel a
-      personagens que JA sao da propria categoria Especializacao (100%).
-      E uma regra bem mais complexa (conta pesos de restricoes ja
-      compradas NO PROPRIO Hatsu, nao so nivel do personagem), fica como
-      proxima expansao.
-    - O bonus de "restricao extrema aumenta o nivel efetivo de acesso"
-      (extremeRestrictionCount no webapp) nao esta ligado ainda — o
-      acesso cruzado usa so o nivel base do personagem. Quando o wizard
-      recalcular isso ao vivo por restricao escolhida, revisitar aqui.
+    - Acesso cruzado entre categorias (calcCategoryAccess do webapp,
+      100/80/60/40% por afinidade) ainda nao implementado; cada
+      personagem so acessa 100% a PROPRIA categoria de Nen.
     - Atributo principal de cada categoria foi simplificado pra UM
       atributo so (a tabela real do webapp tem formulas mistas tipo
       "(PRE+INT+1)/2" pra Especializacao, ou "PRE (pessoas) / INT
@@ -29,8 +20,9 @@
     - Os efeitos com comportamento mecanico especial na ativacao (cura,
       RD, critico, dano bonus) so estao mapeados pra Reforco (ids
       ri_e3, ri_e7, ri_e9, ri_e11 etc.). Hatsus de outras categorias
-      (proprias ou emprestadas) ainda funcionam (dano base 2d6+atributo
-      via natureza Hostil), so nao recebem esses bonus extras ainda.
+      ainda funcionam (dano base 2d6+atributo via natureza Hostil), so
+      nao recebem esses bonus extras especificos ainda — pendencia
+      conhecida pra quando formos expandir isso.
 
     Fonte de verdade: o webapp. Ao atualizar hatsu-db.js, re-rodar o
     pipeline (fetch HTTP + parser JS->Lua) para atualizar o HatsuDB.
@@ -67,8 +59,6 @@ local CATEGORY_ATTR = {
 	["ESPECIALIZAÇÃO"] = "PRE",
 }
 
-local ALL_CATEGORIES = { "INTENSIFICAÇÃO", "TRANSMUTAÇÃO", "MATERIALIZAÇÃO", "MANIPULAÇÃO", "EMISSÃO", "ESPECIALIZAÇÃO" }
-
 local DEFAULT_CATEGORY = "INTENSIFICAÇÃO"
 
 local function getCategoryId(character)
@@ -77,58 +67,6 @@ local function getCategoryId(character)
 		return id
 	end
 	return DEFAULT_CATEGORY
-end
-
-local CATEGORY_AFFINITY = {
-	["INTENSIFICAÇÃO"] = { ["TRANSMUTAÇÃO"] = 80, ["EMISSÃO"] = 80, ["MATERIALIZAÇÃO"] = 60, ["MANIPULAÇÃO"] = 60 },
-	["TRANSMUTAÇÃO"] = { ["INTENSIFICAÇÃO"] = 80, ["MATERIALIZAÇÃO"] = 80, ["EMISSÃO"] = 60, ["MANIPULAÇÃO"] = 40 },
-	["MATERIALIZAÇÃO"] = { ["TRANSMUTAÇÃO"] = 80, ["INTENSIFICAÇÃO"] = 60, ["MANIPULAÇÃO"] = 60, ["EMISSÃO"] = 40 },
-	["MANIPULAÇÃO"] = { ["EMISSÃO"] = 80, ["MATERIALIZAÇÃO"] = 60, ["INTENSIFICAÇÃO"] = 60, ["TRANSMUTAÇÃO"] = 40 },
-	["EMISSÃO"] = { ["MANIPULAÇÃO"] = 80, ["INTENSIFICAÇÃO"] = 80, ["TRANSMUTAÇÃO"] = 60, ["MATERIALIZAÇÃO"] = 40 },
-	["ESPECIALIZAÇÃO"] = { ["MATERIALIZAÇÃO"] = 80, ["MANIPULAÇÃO"] = 80, ["TRANSMUTAÇÃO"] = 60, ["EMISSÃO"] = 60, ["INTENSIFICAÇÃO"] = 40 },
-}
-
-local ACCESS_TABLE = {
-	[0] = { 0, 0, 0, 0 },
-	[1] = { 1, 0, 0, 0 },
-	[2] = { 2, 0, 0, 0 },
-	[3] = { 3, 1, 0, 0 },
-	[4] = { 4, 2, 0, 0 },
-	[5] = { 5, 3, 1, 0 },
-	[6] = { 6, 4, 2, 0 },
-	[7] = { 7, 5, 3, 1 },
-	[8] = { 8, 6, 4, 2 },
-	[9] = { 9, 7, 5, 3 },
-	[10] = { 10, 8, 6, 4 },
-	[11] = { 11, 9, 7, 5 },
-	[12] = { 12, 10, 8, 6 },
-}
-
-local function calcCategoryAccess(charLevel, extremeRestrictionCount)
-	local effectiveLevel = math.min(12, (charLevel or 0) + (extremeRestrictionCount or 0) * 2)
-	local row = ACCESS_TABLE[effectiveLevel] or ACCESS_TABLE[0]
-	return { pct100 = row[1], pct80 = row[2], pct60 = row[3], pct40 = row[4] }
-end
-
-local function getMaxLevelForCategory(myClass, targetClass, charLevel, extremeRestrictionCount)
-	local access = calcCategoryAccess(charLevel, extremeRestrictionCount)
-	if myClass == targetClass then
-		return access.pct100
-	end
-	if targetClass == "ESPECIALIZAÇÃO" then
-		return 0
-	end
-	local pct = (CATEGORY_AFFINITY[myClass] or {})[targetClass] or 0
-	if pct >= 80 then
-		return access.pct80
-	end
-	if pct >= 60 then
-		return access.pct60
-	end
-	if pct >= 40 then
-		return access.pct40
-	end
-	return 0
 end
 
 local function parseNivel(req)
@@ -242,46 +180,6 @@ local function getCategoryCatalog(categoryId)
 	return built
 end
 
-local function getMergedCatalogForCharacter(character)
-	local myClass = getCategoryId(character)
-	local charLevel = (character and character.Level) or 0
-	local ownCatalog = getCategoryCatalog(myClass)
-
-	local effects = {}
-	local seen = {}
-	for _, e in ipairs(ownCatalog.effects) do
-		local copy = table.clone(e)
-		copy.origemCategoria = (e.grupo == "Gerais") and "Gerais" or myClass
-		copy.nivelMaxAcessivel = charLevel
-		table.insert(effects, copy)
-		seen[e.id] = true
-	end
-
-	for _, otherClass in ipairs(ALL_CATEGORIES) do
-		if otherClass ~= myClass then
-			local maxLevel = getMaxLevelForCategory(myClass, otherClass, charLevel, 0)
-			if maxLevel > 0 then
-				local otherCatalog = getCategoryCatalog(otherClass)
-				for _, e in ipairs(otherCatalog.effects) do
-					if e.grupo ~= "Gerais" and not seen[e.id] then
-						local copy = table.clone(e)
-						copy.origemCategoria = otherClass
-						copy.nivelMaxAcessivel = maxLevel
-						table.insert(effects, copy)
-						seen[e.id] = true
-					end
-				end
-			end
-		end
-	end
-
-	return {
-		label = ownCatalog.label,
-		effects = effects,
-		restrictions = ownCatalog.restrictions,
-	}
-end
-
 local function findEffect(catalog, id)
 	for _, e in ipairs(catalog.effects) do
 		if e.id == id then
@@ -301,7 +199,8 @@ local function findRestriction(catalog, id)
 end
 
 function HatsuService.GetCatalog(character, excludeHatsuId)
-	local catalog = getMergedCatalogForCharacter(character)
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
 	local pnDisponivel = 0
 	if character then
 		pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, excludeHatsuId)
@@ -396,7 +295,8 @@ function HatsuService.CreateHatsuV2(character, build)
 		return { success = false, error = "Selecione pelo menos um efeito." }
 	end
 
-	local catalog = getMergedCatalogForCharacter(character)
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
 
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, nil)
 	local custoTotal = 0
@@ -406,13 +306,6 @@ function HatsuService.CreateHatsuV2(character, build)
 		local efeito = findEffect(catalog, eid)
 		if not efeito then
 			return { success = false, error = "Efeito desconhecido: " .. tostring(eid) }
-		end
-		if (efeito.nivel or 1) > (efeito.nivelMaxAcessivel or 0) then
-			return {
-				success = false,
-				error = "Você ainda não tem acesso a \"" .. tostring(efeito.nome) .. "\" (precisa nível " .. efeito.nivel
-					.. " nessa categoria; seu acesso vai até nível " .. tostring(efeito.nivelMaxAcessivel) .. ").",
-			}
 		end
 		custoTotal = custoTotal + efeito.custo
 		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0 })
@@ -493,7 +386,8 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 		return { success = false, error = "Selecione pelo menos um efeito." }
 	end
 
-	local catalog = getMergedCatalogForCharacter(character)
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
 
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, hatsuId)
 	local custoTotal = 0
@@ -502,13 +396,6 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 		local efeito = findEffect(catalog, eid)
 		if not efeito then
 			return { success = false, error = "Efeito desconhecido: " .. tostring(eid) }
-		end
-		if (efeito.nivel or 1) > (efeito.nivelMaxAcessivel or 0) then
-			return {
-				success = false,
-				error = "Você ainda não tem acesso a \"" .. tostring(efeito.nome) .. "\" (precisa nível " .. efeito.nivel
-					.. " nessa categoria; seu acesso vai até nível " .. tostring(efeito.nivelMaxAcessivel) .. ").",
-			}
 		end
 		custoTotal = custoTotal + efeito.custo
 		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0 })
@@ -754,7 +641,8 @@ function HatsuService.AddRestricao(character, hatsuId, restricaoId)
 	if not hatsu then
 		return { success = false, error = "Hatsu não encontrado." }
 	end
-	local catalog = getMergedCatalogForCharacter(character)
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
 	local restr = findRestriction(catalog, restricaoId)
 	if not restr then
 		return { success = false, error = "Restrição desconhecida." }
