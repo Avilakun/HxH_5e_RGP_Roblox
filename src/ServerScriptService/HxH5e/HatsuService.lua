@@ -1,26 +1,31 @@
 --[[
-    HxH5e HatsuService v6 (portado do webapp — dados reais)
-    Diferenca da v5: nao tem mais tabelas digitadas a mao. Efeitos e
-    restricoes vem de ReplicatedStorage.HxH5e.Shared.HatsuDB (porta fiel
-    de js/data/hatsu-db.js do repo Criadores-HxH-5e/Ficha_HxH5e).
+    HxH5e HatsuService v7 (todas as 6 categorias de Nen)
+    Diferenca da v6: nao esta mais preso so em Reforco. Qualquer categoria
+    (INTENSIFICAÇÃO/TRANSMUTAÇÃO/MATERIALIZAÇÃO/MANIPULAÇÃO/EMISSÃO/
+    ESPECIALIZAÇÃO) e derivada de character.Nen.Category, e o catalogo de
+    efeitos/restricoes daquela categoria e montado e cacheado sob demanda.
 
-    Simplificacoes conhecidas em relacao ao webapp (documentadas no
-    CLAUDE.md como pendencia, nao bloqueiam testes basicos):
-    - Pre-requisito de efeito (ex.: "Nivel 2 - Recuperacao Veloz" exige
-      TER comprado Recuperacao Veloz antes) so valida o NUMERO do nivel,
-      nao o efeito-pre-requisito textual.
-    - "Nivel 5 ou Acesso a Reforco" (Dano/Cura Focal) so valida o numero.
-    - Sistema de acesso cruzado entre categorias (calcCategoryAccess do
-      webapp, tabela 100/80/60/40% por afinidade) ainda nao implementado;
-      hoje so processamos a categoria INTENSIFICACAO (Reforco) a 100%.
-    - Fatores de repetivel/maxUsos (comprar o mesmo efeito 2x) ainda nao
-      tem UI no wizard do Roblox.
+    Simplificacoes conhecidas (documentadas, nao bloqueiam testes basicos):
+    - Pre-requisito de efeito por NOME (ex.: "Nivel 2 - Recuperacao Veloz"
+      exige TER comprado Recuperacao Veloz antes) so valida o numero do
+      nivel, nao o efeito-pre-requisito textual.
+    - Acesso cruzado entre categorias (calcCategoryAccess do webapp,
+      100/80/60/40% por afinidade) ainda nao implementado; cada
+      personagem so acessa 100% a PROPRIA categoria de Nen.
+    - Atributo principal de cada categoria foi simplificado pra UM
+      atributo so (a tabela real do webapp tem formulas mistas tipo
+      "(PRE+INT+1)/2" pra Especializacao, ou "PRE (pessoas) / INT
+      (objetos)" pra Manipulacao — aqui usamos so o atributo primario
+      de cada uma pra manter o calculo de TR simples).
+    - Os efeitos com comportamento mecanico especial na ativacao (cura,
+      RD, critico, dano bonus) so estao mapeados pra Reforco (ids
+      ri_e3, ri_e7, ri_e9, ri_e11 etc.). Hatsus de outras categorias
+      ainda funcionam (dano base 2d6+atributo via natureza Hostil), so
+      nao recebem esses bonus extras especificos ainda — pendencia
+      conhecida pra quando formos expandir isso.
 
     Fonte de verdade: o webapp. Ao atualizar hatsu-db.js, re-rodar o
-    pipeline (fetch HTTP + parser JS->Lua) para atualizar o HatsuDB e
-    nada aqui precisa mudar, a menos que os IDs hardcoded em
-    ActivateHatsu (efeitos com comportamento especial) sejam renomeados
-    no webapp.
+    pipeline (fetch HTTP + parser JS->Lua) para atualizar o HatsuDB.
 ]]
 
 local HatsuService = {}
@@ -29,10 +34,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HatsuDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("HatsuDB"))
 local NenService = require(script.Parent:WaitForChild("NenService"))
 
---------------------------------------------------
--- P.N PURO POR PESO (confirmado identico ao webapp: hatsu-creator.js linha ~105
--- const PURE_PN = { leve:1, moderada:2, pesada:3, extrema:4 }; sem 'variavel'.)
---------------------------------------------------
 local PURE_PN = {
 	leve = 1,
 	moderada = 2,
@@ -40,10 +41,34 @@ local PURE_PN = {
 	extrema = 4,
 }
 
-local CATEGORIA_ID = "INTENSIFICAÇÃO"
-local CATEGORIA_LABEL = "Reforço"
+local CATEGORY_LABEL = {
+	["INTENSIFICAÇÃO"] = "Reforço",
+	["TRANSMUTAÇÃO"] = "Transmutação",
+	["MATERIALIZAÇÃO"] = "Materialização",
+	["MANIPULAÇÃO"] = "Manipulação",
+	["EMISSÃO"] = "Emissão",
+	["ESPECIALIZAÇÃO"] = "Especialização",
+}
 
--- "Nível 2 — Recuperação Veloz" -> 2 ; "Nível 5 ou Acesso a Reforço" -> 5
+local CATEGORY_ATTR = {
+	["INTENSIFICAÇÃO"] = "FOR",
+	["TRANSMUTAÇÃO"] = "SAB",
+	["MATERIALIZAÇÃO"] = "INT",
+	["MANIPULAÇÃO"] = "PRE",
+	["EMISSÃO"] = "DES",
+	["ESPECIALIZAÇÃO"] = "PRE",
+}
+
+local DEFAULT_CATEGORY = "INTENSIFICAÇÃO"
+
+local function getCategoryId(character)
+	local id = character and character.Nen and character.Nen.Category
+	if id and HatsuDB.categorias[id] then
+		return id
+	end
+	return DEFAULT_CATEGORY
+end
+
 local function parseNivel(req)
 	if type(req) ~= "string" then
 		return 1
@@ -52,7 +77,6 @@ local function parseNivel(req)
 	return tonumber(n) or 1
 end
 
--- Divide o campo bnf em alternativas quando contem " ou "/" Ou "/" OU "
 local function splitBeneficios(bnf)
 	if type(bnf) ~= "string" or #bnf == 0 then
 		return {}
@@ -71,7 +95,7 @@ local function splitBeneficios(bnf)
 	return partes
 end
 
-local function buildEffects()
+local function buildEffects(categoryId, label)
 	local all = {}
 	for _, e in ipairs(HatsuDB.efeitos_gerais) do
 		table.insert(all, {
@@ -85,12 +109,12 @@ local function buildEffects()
 			repetivel = e.repetivel or false,
 		})
 	end
-	local cat = HatsuDB.categorias[CATEGORIA_ID]
+	local cat = HatsuDB.categorias[categoryId]
 	for _, e in ipairs(cat.efeitos) do
 		table.insert(all, {
 			id = e.id,
 			nome = e.nome,
-			grupo = CATEGORIA_LABEL,
+			grupo = label,
 			nivel = parseNivel(e.req),
 			custo = e.pn,
 			desc = e.desc,
@@ -109,7 +133,7 @@ local PESO_KEY_MAP = {
 	extremas = "extrema",
 }
 
-local function buildRestrictions()
+local function buildRestrictions(categoryId, label)
 	local all = {}
 	for dbKey, peso in pairs(PESO_KEY_MAP) do
 		for _, r in ipairs(HatsuDB.restricoes_gerais[dbKey]) do
@@ -124,14 +148,14 @@ local function buildRestrictions()
 			})
 		end
 	end
-	local cat = HatsuDB.categorias[CATEGORIA_ID]
+	local cat = HatsuDB.categorias[categoryId]
 	for _, r in ipairs(cat.restricoes) do
 		table.insert(all, {
 			id = r.id,
 			nome = r.nome,
 			peso = r.peso,
 			pura = PURE_PN[r.peso],
-			categoria = CATEGORIA_LABEL,
+			categoria = label,
 			descricao = r.desc,
 			beneficios = splitBeneficios(r.bnf),
 		})
@@ -139,11 +163,25 @@ local function buildRestrictions()
 	return all
 end
 
-local ALL_EFFECTS = buildEffects()
-local RESTRICTIONS = buildRestrictions()
+local catalogCache = {}
 
-local function findEffect(id)
-	for _, e in ipairs(ALL_EFFECTS) do
+local function getCategoryCatalog(categoryId)
+	local cached = catalogCache[categoryId]
+	if cached then
+		return cached
+	end
+	local label = CATEGORY_LABEL[categoryId] or categoryId
+	local built = {
+		label = label,
+		effects = buildEffects(categoryId, label),
+		restrictions = buildRestrictions(categoryId, label),
+	}
+	catalogCache[categoryId] = built
+	return built
+end
+
+local function findEffect(catalog, id)
+	for _, e in ipairs(catalog.effects) do
 		if e.id == id then
 			return e
 		end
@@ -151,8 +189,8 @@ local function findEffect(id)
 	return nil
 end
 
-local function findRestriction(id)
-	for _, r in ipairs(RESTRICTIONS) do
+local function findRestriction(catalog, id)
+	for _, r in ipairs(catalog.restrictions) do
 		if r.id == id then
 			return r
 		end
@@ -161,15 +199,18 @@ local function findRestriction(id)
 end
 
 function HatsuService.GetCatalog(character, excludeHatsuId)
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
 	local pnDisponivel = 0
 	if character then
 		pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, excludeHatsuId)
 	end
 	return {
-		effects = ALL_EFFECTS,
-		restrictions = RESTRICTIONS,
+		effects = catalog.effects,
+		restrictions = catalog.restrictions,
 		purePN = PURE_PN,
 		pnDisponivel = pnDisponivel,
+		categoria = catalog.label,
 	}
 end
 
@@ -182,7 +223,9 @@ end
 function HatsuService.CalcTR(character, efeitos, restricoes)
 	local level = character.Level or 1
 	local base = 8 + math.max(1, math.floor(level / 2))
-	local mod = getAttributeMod(character, "FOR")
+	local categoryId = getCategoryId(character)
+	local attrKey = CATEGORY_ATTR[categoryId] or "FOR"
+	local mod = getAttributeMod(character, attrKey)
 
 	local efeitoBonus = 0
 	for _, e in ipairs(efeitos or {}) do
@@ -252,12 +295,15 @@ function HatsuService.CreateHatsuV2(character, build)
 		return { success = false, error = "Selecione pelo menos um efeito." }
 	end
 
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
+
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, nil)
 	local custoTotal = 0
 	local efeitosEscolhidos = {}
 
 	for _, eid in ipairs(build.efeitos) do
-		local efeito = findEffect(eid)
+		local efeito = findEffect(catalog, eid)
 		if not efeito then
 			return { success = false, error = "Efeito desconhecido: " .. tostring(eid) }
 		end
@@ -268,7 +314,7 @@ function HatsuService.CreateHatsuV2(character, build)
 	local pnRestaurado = 0
 	local restricoesAplicadas = {}
 	for _, r in ipairs(build.restricoes or {}) do
-		local restr = findRestriction(r.id)
+		local restr = findRestriction(catalog, r.id)
 		if not restr then
 			return { success = false, error = "Restrição desconhecida: " .. tostring(r.id) }
 		end
@@ -298,7 +344,7 @@ function HatsuService.CreateHatsuV2(character, build)
 	local hatsu = {
 		Id = HatsuService.NextId(character),
 		Nome = build.nome,
-		Tipo = CATEGORIA_LABEL,
+		Tipo = catalog.label,
 		Natureza = detectarNatureza(build.efeitos),
 		Efeitos = efeitosEscolhidos,
 		Restricoes = restricoesAplicadas,
@@ -340,11 +386,14 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 		return { success = false, error = "Selecione pelo menos um efeito." }
 	end
 
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
+
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, hatsuId)
 	local custoTotal = 0
 	local efeitosEscolhidos = {}
 	for _, eid in ipairs(build.efeitos) do
-		local efeito = findEffect(eid)
+		local efeito = findEffect(catalog, eid)
 		if not efeito then
 			return { success = false, error = "Efeito desconhecido: " .. tostring(eid) }
 		end
@@ -355,7 +404,7 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 	local pnRestaurado = 0
 	local restricoesAplicadas = {}
 	for _, r in ipairs(build.restricoes or {}) do
-		local restr = findRestriction(r.id)
+		local restr = findRestriction(catalog, r.id)
 		if not restr then
 			return { success = false, error = "Restrição desconhecida: " .. tostring(r.id) }
 		end
@@ -459,10 +508,12 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 		aura.Current = math.max(0, (aura.Current or 0) - custoReal)
 	end
 
+	local categoryId = getCategoryId(character)
+	local attrKey = CATEGORY_ATTR[categoryId] or "FOR"
 	local natureza = hatsu.Natureza or detectarNatureza(hatsu.Efeitos or {})
 	local attrs = character.Attributes or {}
-	local forVal = attrs.FOR and attrs.FOR.value or 10
-	local forMod = math.max(0, math.floor((forVal - 10) / 2))
+	local principalVal = (attrs[attrKey] and attrs[attrKey].value) or 10
+	local principalMod = math.max(0, math.floor((principalVal - 10) / 2))
 	local conVal = (attrs.CON and attrs.CON.value) or 10
 	local conMod = math.max(0, math.floor((conVal - 10) / 2))
 
@@ -514,8 +565,8 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 
 	local d1 = math.random(1, 6)
 	local d2 = math.random(1, 6)
-	local dano = d1 + d2 + forMod
-	local partes = { "2d6=" .. (d1 + d2), "FOR+" .. forMod }
+	local dano = d1 + d2 + principalMod
+	local partes = { "2d6=" .. (d1 + d2), attrKey .. "+" .. principalMod }
 	for _, e in ipairs(hatsu.Efeitos or {}) do
 		if e.id == "ri_e11" then
 			local d = math.random(1, 8)
@@ -590,7 +641,9 @@ function HatsuService.AddRestricao(character, hatsuId, restricaoId)
 	if not hatsu then
 		return { success = false, error = "Hatsu não encontrado." }
 	end
-	local restr = findRestriction(restricaoId)
+	local categoryId = getCategoryId(character)
+	local catalog = getCategoryCatalog(categoryId)
+	local restr = findRestriction(catalog, restricaoId)
 	if not restr then
 		return { success = false, error = "Restrição desconhecida." }
 	end
