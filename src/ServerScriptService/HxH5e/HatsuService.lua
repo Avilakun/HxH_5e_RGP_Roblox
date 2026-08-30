@@ -1,26 +1,30 @@
 --[[
-    HxH5e HatsuService v8 (acesso cruzado entre categorias de Nen)
-    Diferenca da v7: alem da propria categoria (100%), o personagem agora
-    enxerga e pode comprar efeitos de categorias ALIADAS (hexagono de
-    afinidade do webapp: 80/60/40%), limitados por um nivel de acesso que
-    cresce com o nivel do personagem. Tudo validado no servidor, nao so
-    escondido/mostrado no cliente.
+    HxH5e HatsuService v9 (pre-requisito de efeito por nome + restricao
+    extrema aumentando nivel de acesso cruzado)
+    Diferenca da v8:
+    - Pre-requisito de efeito por NOME agora e validado quando o texto
+      apos o travessao do "req" bate EXATAMENTE com nome(s) de efeito
+      conhecido(s) (regra propria, ALEM do webapp real, que so valida o
+      numero do nivel - confirmado lendo hatsu-creator.js). Exige que o
+      efeito pre-requisito esteja tambem selecionado NO MESMO Hatsu.
+    - Restricoes extremas selecionadas no proprio Hatsu agora aumentam o
+      nivel efetivo de acesso cruzado (cada extrema = +2 nivel, teto 12),
+      igual ao webapp (extremeCount em hatsu-creator.js).
 
     Simplificacoes conhecidas (documentadas, nao bloqueiam testes basicos):
-    - Pre-requisito de efeito por NOME (ex.: "Nivel 2 - Recuperacao Veloz"
-      exige TER comprado Recuperacao Veloz antes) so valida o numero do
-      nivel, nao o efeito-pre-requisito textual.
     - Acesso a Especializacao via regra especial (checkEspecializacaoAccess
       do webapp: piramide de restricoes de Manipulacao/Materializacao)
       AINDA NAO implementado — Especializacao so fica acessivel a
       personagens que JA sao da propria categoria Especializacao (100%).
-      E uma regra bem mais complexa (conta pesos de restricoes ja
-      compradas NO PROPRIO Hatsu, nao so nivel do personagem), fica como
-      proxima expansao.
-    - O bonus de "restricao extrema aumenta o nivel efetivo de acesso"
-      (extremeRestrictionCount no webapp) nao esta ligado ainda — o
-      acesso cruzado usa so o nivel base do personagem. Quando o wizard
-      recalcular isso ao vivo por restricao escolhida, revisitar aqui.
+    - Pre-requisito por nome so cobre o caso "puro" (so nome, ou lista
+      "X ou Y" de nomes). Casos mistos com atributo/condicao customizada
+      ("PRE 3+ e C.S.C", "custo > 10%", "3 restricoes pesadas" etc.)
+      continuam so com a checagem de nivel, como o webapp faz.
+    - O catalogo mostrado no WIZARD (GetCatalog) ainda usa extremeCount=0
+      fixo (o jogador so ve o nivel de acesso boostado depois de criar o
+      Hatsu de verdade em CreateHatsuV2/EditHatsu, nao em tempo real
+      enquanto marca as restricoes no wizard). Ligar isso ao vivo no
+      cliente fica como proxima expansao.
     - Atributo principal de cada categoria foi simplificado pra UM
       atributo so (a tabela real do webapp tem formulas mistas tipo
       "(PRE+INT+1)/2" pra Especializacao, ou "PRE (pessoas) / INT
@@ -28,9 +32,7 @@
       de cada uma pra manter o calculo de TR simples).
     - Os efeitos com comportamento mecanico especial na ativacao (cura,
       RD, critico, dano bonus) so estao mapeados pra Reforco (ids
-      ri_e3, ri_e7, ri_e9, ri_e11 etc.). Hatsus de outras categorias
-      (proprias ou emprestadas) ainda funcionam (dano base 2d6+atributo
-      via natureza Hostil), so nao recebem esses bonus extras ainda.
+      ri_e3, ri_e7, ri_e9, ri_e11 etc.).
 
     Fonte de verdade: o webapp. Ao atualizar hatsu-db.js, re-rodar o
     pipeline (fetch HTTP + parser JS->Lua) para atualizar o HatsuDB.
@@ -139,6 +141,33 @@ local function parseNivel(req)
 	return tonumber(n) or 1
 end
 
+local function parsePrereqNames(req, allEffectNames)
+	if type(req) ~= "string" then
+		return nil
+	end
+	local dashStart, dashEnd = req:find("—", 1, true)
+	if not dashStart then
+		dashStart, dashEnd = req:find("–", 1, true)
+	end
+	if not dashStart then
+		return nil
+	end
+	local rest = req:sub(dashEnd + 1):gsub("^%s+", ""):gsub("%s+$", "")
+	if #rest == 0 then
+		return nil
+	end
+	local candidatos = {}
+	for parte in (rest .. " ou "):gmatch("(.-)%s+[Oo][Uu]%s+") do
+		table.insert(candidatos, parte)
+	end
+	for _, c in ipairs(candidatos) do
+		if not allEffectNames[c] then
+			return nil
+		end
+	end
+	return candidatos
+end
+
 local function splitBeneficios(bnf)
 	if type(bnf) ~= "string" or #bnf == 0 then
 		return {}
@@ -157,7 +186,26 @@ local function splitBeneficios(bnf)
 	return partes
 end
 
+local globalEffectNamesCache = nil
+local function getGlobalEffectNames()
+	if globalEffectNamesCache then
+		return globalEffectNamesCache
+	end
+	local names = {}
+	for _, e in ipairs(HatsuDB.efeitos_gerais) do
+		names[e.nome] = true
+	end
+	for _, catId in ipairs(ALL_CATEGORIES) do
+		for _, e in ipairs(HatsuDB.categorias[catId].efeitos) do
+			names[e.nome] = true
+		end
+	end
+	globalEffectNamesCache = names
+	return names
+end
+
 local function buildEffects(categoryId, label)
+	local allNames = getGlobalEffectNames()
 	local all = {}
 	for _, e in ipairs(HatsuDB.efeitos_gerais) do
 		table.insert(all, {
@@ -169,6 +217,7 @@ local function buildEffects(categoryId, label)
 			desc = e.desc,
 			req = e.req,
 			repetivel = e.repetivel or false,
+			prereqNomes = parsePrereqNames(e.req, allNames),
 		})
 	end
 	local cat = HatsuDB.categorias[categoryId]
@@ -182,6 +231,7 @@ local function buildEffects(categoryId, label)
 			desc = e.desc,
 			req = e.req,
 			repetivel = e.repetivel or false,
+			prereqNomes = parsePrereqNames(e.req, allNames),
 		})
 	end
 	return all
@@ -242,7 +292,7 @@ local function getCategoryCatalog(categoryId)
 	return built
 end
 
-local function getMergedCatalogForCharacter(character)
+local function getMergedCatalogForCharacter(character, extremeCount)
 	local myClass = getCategoryId(character)
 	local charLevel = (character and character.Level) or 0
 	local ownCatalog = getCategoryCatalog(myClass)
@@ -259,7 +309,7 @@ local function getMergedCatalogForCharacter(character)
 
 	for _, otherClass in ipairs(ALL_CATEGORIES) do
 		if otherClass ~= myClass then
-			local maxLevel = getMaxLevelForCategory(myClass, otherClass, charLevel, 0)
+			local maxLevel = getMaxLevelForCategory(myClass, otherClass, charLevel, extremeCount or 0)
 			if maxLevel > 0 then
 				local otherCatalog = getCategoryCatalog(otherClass)
 				for _, e in ipairs(otherCatalog.effects) do
@@ -301,7 +351,7 @@ local function findRestriction(catalog, id)
 end
 
 function HatsuService.GetCatalog(character, excludeHatsuId)
-	local catalog = getMergedCatalogForCharacter(character)
+	local catalog = getMergedCatalogForCharacter(character, 0)
 	local pnDisponivel = 0
 	if character then
 		pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, excludeHatsuId)
@@ -385,6 +435,28 @@ local function detectarNatureza(efeitos)
 	return "Versatil"
 end
 
+local function validatePrereqNames(efeitosEscolhidos)
+	local nomesEscolhidos = {}
+	for _, ef in ipairs(efeitosEscolhidos) do
+		nomesEscolhidos[ef.nome] = true
+	end
+	for _, ef in ipairs(efeitosEscolhidos) do
+		if ef.prereqNomes then
+			local atendido = false
+			for _, pn in ipairs(ef.prereqNomes) do
+				if nomesEscolhidos[pn] then
+					atendido = true
+					break
+				end
+			end
+			if not atendido then
+				return "\"" .. tostring(ef.nome) .. "\" precisa que você também inclua " .. table.concat(ef.prereqNomes, " ou ") .. " nesse mesmo Hatsu."
+			end
+		end
+	end
+	return nil
+end
+
 function HatsuService.CreateHatsuV2(character, build)
 	if (character and character.Level or 0) < 1 then
 		return { success = false, error = "Nen ainda não foi despertado. Hatsus só podem ser criados a partir do nível 1 (Batismo e Despertar)." }
@@ -396,7 +468,32 @@ function HatsuService.CreateHatsuV2(character, build)
 		return { success = false, error = "Selecione pelo menos um efeito." }
 	end
 
-	local catalog = getMergedCatalogForCharacter(character)
+	local myClass = getCategoryId(character)
+	local restrictionCatalog = getCategoryCatalog(myClass)
+
+	local pnRestaurado = 0
+	local extremeCount = 0
+	local restricoesAplicadas = {}
+	for _, r in ipairs(build.restricoes or {}) do
+		local restr = findRestriction(restrictionCatalog, r.id)
+		if not restr then
+			return { success = false, error = "Restrição desconhecida: " .. tostring(r.id) }
+		end
+		if restr.peso == "extrema" then
+			extremeCount = extremeCount + 1
+		end
+		local pura = r.pura or false
+		local ganho = 0
+		if pura and restr.pura then
+			ganho = restr.pura
+			pnRestaurado = pnRestaurado + ganho
+		end
+		table.insert(restricoesAplicadas, {
+			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0,
+		})
+	end
+
+	local catalog = getMergedCatalogForCharacter(character, extremeCount)
 
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, nil)
 	local custoTotal = 0
@@ -415,25 +512,12 @@ function HatsuService.CreateHatsuV2(character, build)
 			}
 		end
 		custoTotal = custoTotal + efeito.custo
-		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0 })
+		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes })
 	end
 
-	local pnRestaurado = 0
-	local restricoesAplicadas = {}
-	for _, r in ipairs(build.restricoes or {}) do
-		local restr = findRestriction(catalog, r.id)
-		if not restr then
-			return { success = false, error = "Restrição desconhecida: " .. tostring(r.id) }
-		end
-		local pura = r.pura or false
-		local ganho = 0
-		if pura and restr.pura then
-			ganho = restr.pura
-			pnRestaurado = pnRestaurado + ganho
-		end
-		table.insert(restricoesAplicadas, {
-			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0,
-		})
+	local prereqErr = validatePrereqNames(efeitosEscolhidos)
+	if prereqErr then
+		return { success = false, error = prereqErr }
 	end
 
 	local custoLiquido = math.max(0, custoTotal - pnRestaurado)
@@ -493,7 +577,32 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 		return { success = false, error = "Selecione pelo menos um efeito." }
 	end
 
-	local catalog = getMergedCatalogForCharacter(character)
+	local myClass = getCategoryId(character)
+	local restrictionCatalog = getCategoryCatalog(myClass)
+
+	local pnRestaurado = 0
+	local extremeCount = 0
+	local restricoesAplicadas = {}
+	for _, r in ipairs(build.restricoes or {}) do
+		local restr = findRestriction(restrictionCatalog, r.id)
+		if not restr then
+			return { success = false, error = "Restrição desconhecida: " .. tostring(r.id) }
+		end
+		if restr.peso == "extrema" then
+			extremeCount = extremeCount + 1
+		end
+		local pura = r.pura or false
+		local ganho = 0
+		if pura and restr.pura then
+			ganho = restr.pura
+			pnRestaurado = pnRestaurado + ganho
+		end
+		table.insert(restricoesAplicadas, {
+			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0,
+		})
+	end
+
+	local catalog = getMergedCatalogForCharacter(character, extremeCount)
 
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, hatsuId)
 	local custoTotal = 0
@@ -511,25 +620,12 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 			}
 		end
 		custoTotal = custoTotal + efeito.custo
-		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0 })
+		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes })
 	end
 
-	local pnRestaurado = 0
-	local restricoesAplicadas = {}
-	for _, r in ipairs(build.restricoes or {}) do
-		local restr = findRestriction(catalog, r.id)
-		if not restr then
-			return { success = false, error = "Restrição desconhecida: " .. tostring(r.id) }
-		end
-		local pura = r.pura or false
-		local ganho = 0
-		if pura and restr.pura then
-			ganho = restr.pura
-			pnRestaurado = pnRestaurado + ganho
-		end
-		table.insert(restricoesAplicadas, {
-			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0,
-		})
+	local prereqErr = validatePrereqNames(efeitosEscolhidos)
+	if prereqErr then
+		return { success = false, error = prereqErr }
 	end
 
 	local custoLiquido = math.max(0, custoTotal - pnRestaurado)
@@ -754,7 +850,7 @@ function HatsuService.AddRestricao(character, hatsuId, restricaoId)
 	if not hatsu then
 		return { success = false, error = "Hatsu não encontrado." }
 	end
-	local catalog = getMergedCatalogForCharacter(character)
+	local catalog = getMergedCatalogForCharacter(character, 0)
 	local restr = findRestriction(catalog, restricaoId)
 	if not restr then
 		return { success = false, error = "Restrição desconhecida." }
