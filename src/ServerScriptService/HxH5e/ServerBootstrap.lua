@@ -43,6 +43,11 @@ local AddGrau = getOrCreateRemote("AddGrau")
 local AddRestricao = getOrCreateRemote("AddRestricao")
 local BasicAttack = getOrCreateRemote("BasicAttack")
 local GetHatsuCatalog = getOrCreateRemote("GetHatsuCatalog")
+local GetGrauOptions = getOrCreateRemote("GetGrauOptions")
+local SetBioField = getOrCreateRemote("SetBioField")
+local ApplyCondition = getOrCreateRemote("ApplyCondition")
+local RemoveCondition = getOrCreateRemote("RemoveCondition")
+local GetConditionsCatalog = getOrCreateRemote("GetConditionsCatalog")
 local CreateHatsuV2 = getOrCreateRemote("CreateHatsuV2")
 local GetRaces = getOrCreateRemote("GetRaces")
 local GetRaceBonusInfo = getOrCreateRemote("GetRaceBonusInfo")
@@ -338,6 +343,45 @@ end
 GetHatsuCatalog.OnServerInvoke = function(player, excludeHatsuId)
 	local character = CharacterService.GetActiveCharacter(player)
 	return HatsuService.GetCatalog(character, excludeHatsuId)
+end
+
+GetGrauOptions.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { opcoes = {}, total = 5 } end
+	return HatsuService.GetGrauOptions(character)
+end
+
+SetBioField.OnServerInvoke = function(player, characterId, field, value)
+	local result = CharacterService.SetBioField(player, characterId, field, value)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+ApplyCondition.OnServerInvoke = function(player, condId, grau)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	local result = CharacterService.ApplyCondition(character, condId, grau)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+RemoveCondition.OnServerInvoke = function(player, condId)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	local result = CharacterService.RemoveCondition(character, condId)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+GetConditionsCatalog.OnServerInvoke = function(player)
+	local ConditionsDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("ConditionsDB"))
+	return ConditionsDB.Condicoes
 end
 
 CreateHatsuV2.OnServerInvoke = function(player, build)

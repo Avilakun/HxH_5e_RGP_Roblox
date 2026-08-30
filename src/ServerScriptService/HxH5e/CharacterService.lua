@@ -12,6 +12,7 @@ local HxH5e = ReplicatedStorage:WaitForChild("HxH5e")
 local CharacterSchema = require(HxH5e:WaitForChild("Shared"):WaitForChild("CharacterSchema"))
 local SystemDB = require(HxH5e:WaitForChild("Shared"):WaitForChild("SystemDB"))
 local CharacterRepository = require(script.Parent:WaitForChild("CharacterRepository"))
+local ConditionsDB = require(HxH5e:WaitForChild("Shared"):WaitForChild("ConditionsDB"))
 
 local CharacterService = {}
 
@@ -605,6 +606,14 @@ local function normalizeCharacter(char)
 	end
 	if type(char.Bio) ~= "table" then
 		char.Bio = deepCopy(defaults.Bio)
+	else
+		-- Preenche campos novos (Historia/Organizacoes/Inimigos/Aliados)
+		-- em personagens que ja tinham Bio de antes dessa expansao.
+		for key, defaultVal in pairs(defaults.Bio) do
+			if char.Bio[key] == nil then
+				char.Bio[key] = defaultVal
+			end
+		end
 	end
 
 	if type(char.Nen) ~= "table" then
@@ -870,6 +879,190 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 		success = true,
 		character = character,
 	}
+end
+
+local BIO_FIELDS = {
+	Personality = true, Goals = true, Likes = true, Hates = true,
+	Historia = true, Organizacoes = true, Inimigos = true, Aliados = true,
+}
+local BIO_FIELD_MAX_LEN = 2000
+
+function CharacterService.SetBioField(player, characterId, field, value)
+	if not BIO_FIELDS[field] then
+		return { success = false, error = "Campo de biografia desconhecido: " .. tostring(field) }
+	end
+	if type(value) ~= "string" then
+		return { success = false, error = "Valor inválido." }
+	end
+	if #value > BIO_FIELD_MAX_LEN then
+		return { success = false, error = "Texto muito longo (máximo " .. BIO_FIELD_MAX_LEN .. " caracteres)." }
+	end
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	character.Bio = character.Bio or {}
+	character.Bio[field] = value
+	return { success = true }
+end
+
+-- ================= Condicoes Mecanicas (ver ConditionsDB.lua) =================
+-- character.Conditions e uma lista de { id, grau (so p/ condicoes
+-- variaveis), autoGrantedBy (nil = aplicada diretamente, ou o id da
+-- condicao que concedeu essa automaticamente, ex.: Cego concede
+-- Desprevenido+Lento). Remover uma condicao tambem remove tudo que ELA
+-- concedeu, a nao ser que aquilo tambem esteja aplicado por outra fonte.
+
+local function hasConditionId(character, condId)
+	for _, entry in ipairs(character.Conditions or {}) do
+		if entry.id == condId then
+			return true
+		end
+	end
+	return false
+end
+
+local function applyConditionInternal(character, condId, grau, autoGrantedBy, visited)
+	visited = visited or {}
+	if visited[condId] then
+		return -- evita loop caso o catalogo algum dia tenha um ciclo
+	end
+	visited[condId] = true
+
+	local def = ConditionsDB.Get(condId)
+	if not def then
+		return false, "Condição desconhecida: " .. tostring(condId)
+	end
+
+	character.Conditions = character.Conditions or {}
+
+	if def.variavel then
+		-- Condicao variavel (Envenenado/Sangramento/Exausto): uma nova
+		-- aplicacao IMPOE o novo grau (substitui), como descrito no
+		-- material -- nao acumula varias entradas da mesma condicao.
+		local jaExiste = nil
+		for _, entry in ipairs(character.Conditions) do
+			if entry.id == condId then
+				jaExiste = entry
+				break
+			end
+		end
+		if jaExiste then
+			jaExiste.grau = grau
+			jaExiste.autoGrantedBy = autoGrantedBy or jaExiste.autoGrantedBy
+		else
+			table.insert(character.Conditions, { id = condId, grau = grau, autoGrantedBy = autoGrantedBy })
+		end
+		local grauInfo = def.graus and def.graus[grau]
+		if grauInfo and grauInfo.concede then
+			for _, subId in ipairs(grauInfo.concede) do
+				applyConditionInternal(character, subId, nil, condId, visited)
+			end
+		end
+	else
+		-- Condicao fixa: nao duplica a MESMA combinacao (id + fonte), mas
+		-- permite fontes independentes concederem o mesmo id (ex.:
+		-- Desprevenido vindo de Cego E de Agarrado ao mesmo tempo) --
+		-- assim remover uma fonte nao apaga o efeito concedido pela outra.
+		local duplicado = false
+		for _, entry in ipairs(character.Conditions) do
+			if entry.id == condId and entry.autoGrantedBy == autoGrantedBy then
+				duplicado = true
+				break
+			end
+		end
+		if not duplicado then
+			table.insert(character.Conditions, { id = condId, grau = nil, autoGrantedBy = autoGrantedBy })
+		end
+		if def.concede then
+			for _, subId in ipairs(def.concede) do
+				applyConditionInternal(character, subId, nil, condId, visited)
+			end
+		end
+	end
+	return true
+end
+
+function CharacterService.ApplyCondition(character, condId, grau)
+	local def = ConditionsDB.Get(condId)
+	if not def then
+		return { success = false, error = "Condição desconhecida: " .. tostring(condId) }
+	end
+	if def.variavel and (not grau or not (def.graus and def.graus[grau])) then
+		local opcoes = {}
+		for g in pairs(def.graus or {}) do table.insert(opcoes, g) end
+		return { success = false, error = "\"" .. def.nome .. "\" exige um grau válido: " .. table.concat(opcoes, ", ") }
+	end
+	local ok, err = applyConditionInternal(character, condId, grau, nil, {})
+	if not ok then
+		return { success = false, error = err }
+	end
+	return { success = true, message = def.nome .. " aplicada" .. (grau and (" (" .. grau .. ")") or "") .. "." }
+end
+
+function CharacterService.RemoveCondition(character, condId)
+	if not character.Conditions then
+		return { success = true, message = "Nenhuma condição ativa." }
+	end
+	-- Remove a condicao pedida (id == condId) E qualquer sub-condicao
+	-- QUE ELA TENHA CONCEDIDO (autoGrantedBy == condId). So 1 nivel de
+	-- cascata (o catalogo atual nao tem condicoes concedidas que, por
+	-- sua vez, concedem outras). Importante: NAO marca o id da
+	-- sub-condicao removida como "removido" pra frente -- isso evitaria
+	-- por engano remover a mesma sub-condicao concedida por OUTRA fonte
+	-- ainda ativa (ex.: Desprevenido concedido tanto por Cego quanto
+	-- por Agarrado -- remover Cego nao deve tirar o Desprevenido do
+	-- Agarrado).
+	for i = #character.Conditions, 1, -1 do
+		local entry = character.Conditions[i]
+		if entry.id == condId or entry.autoGrantedBy == condId then
+			table.remove(character.Conditions, i)
+		end
+	end
+	return { success = true, message = "Condição removida." }
+end
+
+-- Efeitos numericos JA conectados (CA e Deslocamento). Nunca mutam o
+-- valor base salvo em character.Vitals -- calculam por cima, sob
+-- demanda, pra poder aplicar/remover condicoes livremente sem perder
+-- o valor original.
+function CharacterService.GetConditionModifiers(character)
+	local caPenalty = 0
+	local deslocFactor = 1
+	local deslocZero = false
+	local auraCostExtra = 0
+	local ativos = {}
+	for _, entry in ipairs(character.Conditions or {}) do
+		ativos[entry.id] = true
+	end
+	if ativos["inconsciente"] or ativos["paralisado"] then
+		caPenalty = caPenalty - 10
+	end
+	if ativos["imovel"] or ativos["paralisado"] then
+		deslocZero = true
+	end
+	if ativos["lento"] or ativos["enredado"] then
+		deslocFactor = deslocFactor * 0.5
+	end
+	if ativos["condenado"] then
+		auraCostExtra = auraCostExtra + 5
+	end
+	return { caPenalty = caPenalty, deslocFactor = deslocFactor, deslocZero = deslocZero, auraCostExtra = auraCostExtra }
+end
+
+function CharacterService.GetEffectiveCA(character)
+	local mods = CharacterService.GetConditionModifiers(character)
+	return ((character.Vitals and character.Vitals.CA) or 10) + mods.caPenalty
+end
+
+function CharacterService.GetEffectiveDeslocamento(character)
+	local mods = CharacterService.GetConditionModifiers(character)
+	local base = (character.Vitals and character.Vitals.Deslocamento) or 9
+	if mods.deslocZero then
+		return 0
+	end
+	return base * mods.deslocFactor
 end
 
 function CharacterService.DeleteCharacter(player, characterId)

@@ -1,5 +1,7 @@
 --[[
-    HxH5e FichaClient (COMPLETO)
+    HxH5e FichaClient (COMPLETO — Parte 1 de 3)
+    Substitua o arquivo inteiro por esta Parte 1.
+    Depois cole a Parte 2 logo abaixo e depois a Parte 3.
 ]]
 
 local Players = game:GetService("Players")
@@ -33,7 +35,7 @@ local GetSkillsInfo = HxH5e:WaitForChild("GetSkillsInfo")
 
 local RESTRICAO_IDS = { "Compromisso", "Condicao", "Limitacao", "Requisito" }
 
--- Declarações antecipadas (as funções são definidas mais abaixo)
+-- Declarações antecipadas (as funções são definidas na Parte 3)
 local wizardOpen
 local openHatsuDetail
 
@@ -272,7 +274,7 @@ addCloseButton(fichaFrame)
 
 local TAB_LIST = {
 	{ id = "FICHA", label = "FICHA", enabled = true },
-	{ id = "BIO", label = "BIO", enabled = false },
+	{ id = "BIO", label = "BIO", enabled = true },
 	{ id = "NEN", label = "NEN", enabled = true },
 	{ id = "TRACOS", label = "TRAÇOS", enabled = true },
 	{ id = "INV", label = "INV", enabled = false },
@@ -509,6 +511,26 @@ do
 	tracosLayout.Padding = UDim.new(0, 8)
 	tracosLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tracosLayout.Parent = tracosScroll
+end
+
+-- ---------- Conteudo: BIO (personalidade, historia, organizacoes, inimigos, aliados) ----------
+
+local bioScroll = Instance.new("ScrollingFrame")
+bioScroll.Name = "BioScroll"
+bioScroll.Size = UDim2.new(1, -20, 1, -180)
+bioScroll.Position = UDim2.new(0, 10, 0, 72)
+bioScroll.BackgroundTransparency = 1
+bioScroll.ScrollBarThickness = 6
+bioScroll.BorderSizePixel = 0
+bioScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+bioScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+bioScroll.Visible = false
+bioScroll.Parent = fichaFrame
+do
+	local bioLayout = Instance.new("UIListLayout")
+	bioLayout.Padding = UDim.new(0, 6)
+	bioLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	bioLayout.Parent = bioScroll
 end
 
 -- ================= Botões fixos da ficha =================
@@ -1173,6 +1195,146 @@ end
 
 -- ---------- Troca de guia ----------
 
+-- ---------- BIO: reaproveita a tabela "tabButtons" pra guardar a funcao
+-- refreshBio e o estado do sanfona, SEM criar novo local de topo (o
+-- arquivo ja esta no teto de 200 locais do Luau nesse escopo principal).
+tabButtons.bioExpanded = { Personalidade = true, Historia = false, Organizacoes = false, Inimigos = false, Aliados = false }
+
+tabButtons.refreshBio = function()
+	for _, child in ipairs(bioScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	local character = GetCharacter:InvokeServer()
+	if not character then
+		local lbl = makeLabel(bioScroll, "Empty", "Nenhum personagem ativo.",
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 30), 13)
+		return
+	end
+	local characterId = character.Id
+	local bio = character.Bio or {}
+
+	local function saveField(field, value)
+		HxH5e.SetBioField:InvokeServer(characterId, field, value)
+	end
+
+	local function addTextBox(parent, name, placeholder, initialText, sizeY, posY, field)
+		local box = Instance.new("TextBox")
+		box.Name = name
+		box.Size = UDim2.new(1, -16, 0, sizeY)
+		box.Position = UDim2.new(0, 8, 0, posY)
+		box.PlaceholderText = placeholder
+		box.Text = initialText or ""
+		box.MultiLine = true
+		box.TextWrapped = true
+		box.ClearTextOnFocus = false
+		box.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+		box.TextColor3 = Color3.fromRGB(120, 200, 255)
+		box.PlaceholderColor3 = Color3.fromRGB(120, 120, 135)
+		box.Font = Enum.Font.Gotham
+		box.TextSize = 13
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.TextYAlignment = Enum.TextYAlignment.Top
+		box.BorderSizePixel = 0
+		box.Parent = parent
+		box.FocusLost:Connect(function()
+			saveField(field, box.Text)
+		end)
+		return box
+	end
+
+	local SECOES = {
+		{ id = "Personalidade", titulo = "PERSONALIDADE" },
+		{ id = "Historia", titulo = "HISTÓRIA" },
+		{ id = "Organizacoes", titulo = "ORGANIZAÇÕES" },
+		{ id = "Inimigos", titulo = "INIMIGOS" },
+		{ id = "Aliados", titulo = "ALIADOS" },
+	}
+
+	for si, secao in ipairs(SECOES) do
+		local expandido = tabButtons.bioExpanded[secao.id]
+		local alturaConteudo = 0
+		if expandido then
+			if secao.id == "Personalidade" then
+				alturaConteudo = 8 + 70 + 8 + 70 + 8 + 90 + 8
+			else
+				alturaConteudo = 8 + 120 + 8
+			end
+		end
+		local sectionFrame = makeFrame(bioScroll, "BioSec_" .. secao.id,
+			UDim2.new(1, 0, 0, 34 + alturaConteudo), UDim2.new(0, 0, 0, 0), Color3.fromRGB(30, 32, 44))
+		sectionFrame.LayoutOrder = si
+
+		local headerBtn = makeButton(sectionFrame, "Header", (expandido and "▼ " or "▶ ") .. secao.titulo,
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 34))
+		headerBtn.TextXAlignment = Enum.TextXAlignment.Left
+		headerBtn.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+		headerBtn.TextSize = 13
+		headerBtn.Activated:Connect(function()
+			tabButtons.bioExpanded[secao.id] = not tabButtons.bioExpanded[secao.id]
+			tabButtons.refreshBio()
+		end)
+
+		if expandido then
+			if secao.id == "Personalidade" then
+				addTextBox(sectionFrame, "Tracos", "Descreva como seu personagem se comporta...", bio.Personality, 70, 40, "Personality")
+				addTextBox(sectionFrame, "Sonho", "Qual a maior desejo do seu personagem?", bio.Goals, 70, 118, "Goals")
+				local odeioLbl = makeLabel(sectionFrame, "OdeioLbl", "O QUE ODEIO", UDim2.new(0, 8, 0, 196), UDim2.new(0.5, -12, 0, 14), 10)
+				odeioLbl.TextColor3 = Color3.fromRGB(150, 150, 165)
+				local gostoLbl = makeLabel(sectionFrame, "GostoLbl", "O QUE GOSTO", UDim2.new(0.5, 4, 0, 196), UDim2.new(0.5, -12, 0, 14), 10)
+				gostoLbl.TextColor3 = Color3.fromRGB(150, 150, 165)
+				local odeioBox = Instance.new("TextBox")
+				odeioBox.Name = "Odeio"
+				odeioBox.Size = UDim2.new(0.5, -12, 0, 66)
+				odeioBox.Position = UDim2.new(0, 8, 0, 212)
+				odeioBox.PlaceholderText = "O que te tira do sério..."
+				odeioBox.Text = bio.Hates or ""
+				odeioBox.MultiLine = true
+				odeioBox.TextWrapped = true
+				odeioBox.ClearTextOnFocus = false
+				odeioBox.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+				odeioBox.TextColor3 = Color3.fromRGB(120, 200, 255)
+				odeioBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 135)
+				odeioBox.Font = Enum.Font.Gotham
+				odeioBox.TextSize = 13
+				odeioBox.TextXAlignment = Enum.TextXAlignment.Left
+				odeioBox.TextYAlignment = Enum.TextYAlignment.Top
+				odeioBox.BorderSizePixel = 0
+				odeioBox.Parent = sectionFrame
+				odeioBox.FocusLost:Connect(function() saveField("Hates", odeioBox.Text) end)
+				local gostoBox = Instance.new("TextBox")
+				gostoBox.Name = "Gosto"
+				gostoBox.Size = UDim2.new(0.5, -12, 0, 66)
+				gostoBox.Position = UDim2.new(0.5, 4, 0, 212)
+				gostoBox.PlaceholderText = "O que te agrada..."
+				gostoBox.Text = bio.Likes or ""
+				gostoBox.MultiLine = true
+				gostoBox.TextWrapped = true
+				gostoBox.ClearTextOnFocus = false
+				gostoBox.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+				gostoBox.TextColor3 = Color3.fromRGB(120, 200, 255)
+				gostoBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 135)
+				gostoBox.Font = Enum.Font.Gotham
+				gostoBox.TextSize = 13
+				gostoBox.TextXAlignment = Enum.TextXAlignment.Left
+				gostoBox.TextYAlignment = Enum.TextYAlignment.Top
+				gostoBox.BorderSizePixel = 0
+				gostoBox.Parent = sectionFrame
+				gostoBox.FocusLost:Connect(function() saveField("Likes", gostoBox.Text) end)
+			elseif secao.id == "Historia" then
+				addTextBox(sectionFrame, "Campo", "Escreva a história do seu personagem...", bio.Historia, 120, 40, "Historia")
+			elseif secao.id == "Organizacoes" then
+				addTextBox(sectionFrame, "Campo", "Organizações aliadas e seu grau de poder/autoridade nelas...", bio.Organizacoes, 120, 40, "Organizacoes")
+			elseif secao.id == "Inimigos" then
+				addTextBox(sectionFrame, "Campo", "Inimigos do seu personagem...", bio.Inimigos, 120, 40, "Inimigos")
+			elseif secao.id == "Aliados" then
+				addTextBox(sectionFrame, "Campo", "Aliados do seu personagem...", bio.Aliados, 120, 40, "Aliados")
+			end
+		end
+	end
+end
+
 local function refreshTracos()
 	for _, child in ipairs(tracosScroll:GetChildren()) do
 		if child:IsA("Frame") or child:IsA("TextLabel") then
@@ -1256,12 +1418,15 @@ local function setFichaTab(tabId)
 	statusScroll.Visible = (tabId == "FICHA")
 	nenScroll.Visible = (tabId == "NEN")
 	tracosScroll.Visible = (tabId == "TRACOS")
+	bioScroll.Visible = (tabId == "BIO")
 
 	if tabId == "NEN" then
 		refreshNen()
 		refreshHatsus()
 	elseif tabId == "TRACOS" then
 		refreshTracos()
+	elseif tabId == "BIO" then
+		tabButtons.refreshBio()
 	end
 end
 
@@ -2214,6 +2379,25 @@ local function wizardRender()
 		pesoAbasFrame.Visible = true
 		efeitoAbasFrame.Visible = false
 
+		do
+			local buscaBox = Instance.new("TextBox")
+			buscaBox.Name = "BuscaRestricao"
+			buscaBox.Size = UDim2.new(1, 0, 0, 30)
+			buscaBox.PlaceholderText = "🔍 Buscar restrição por nome (todas as categorias)..."
+			buscaBox.Text = wizardState.buscaRestricao
+			buscaBox.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+			buscaBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+			buscaBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
+			buscaBox.Font = Enum.Font.Gotham
+			buscaBox.TextSize = 13
+			buscaBox.BorderSizePixel = 0
+			buscaBox.Parent = wizardScroll
+			buscaBox.FocusLost:Connect(function()
+				wizardState.buscaRestricao = buscaBox.Text
+				wizardRender()
+			end)
+		end
+
 		for _, child in ipairs(pesoAbasFrame:GetChildren()) do
 			if child:IsA("TextButton") then
 				child:Destroy()
@@ -2235,7 +2419,10 @@ local function wizardRender()
 
 		for _, r in ipairs(cat.restrictions) do
 			local mostra = false
-			if wizardState.pesoAba == "Todas" then
+			local buscaAtiva = #wizardState.buscaRestricao > 0
+			if buscaAtiva then
+				mostra = r.nome:lower():find(wizardState.buscaRestricao:lower(), 1, true) ~= nil
+			elseif wizardState.pesoAba == "Todas" then
 				mostra = true
 			elseif wizardState.pesoAba == "Reforço" then
 				mostra = (r.categoria == "Reforço")
@@ -2333,6 +2520,25 @@ local function wizardRender()
 		pesoAbasFrame.Visible = false
 		efeitoAbasFrame.Visible = true
 
+		do
+			local buscaBox = Instance.new("TextBox")
+			buscaBox.Name = "BuscaEfeito"
+			buscaBox.Size = UDim2.new(1, 0, 0, 30)
+			buscaBox.PlaceholderText = "🔍 Buscar efeito por nome (todas as categorias acessíveis)..."
+			buscaBox.Text = wizardState.buscaEfeito
+			buscaBox.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+			buscaBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+			buscaBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
+			buscaBox.Font = Enum.Font.Gotham
+			buscaBox.TextSize = 13
+			buscaBox.BorderSizePixel = 0
+			buscaBox.Parent = wizardScroll
+			buscaBox.FocusLost:Connect(function()
+				wizardState.buscaEfeito = buscaBox.Text
+				wizardRender()
+			end)
+		end
+
 		for _, child in ipairs(efeitoAbasFrame:GetChildren()) do
 			if child:IsA("TextButton") then
 				child:Destroy()
@@ -2382,8 +2588,11 @@ local function wizardRender()
 
 		local ordenados = sortEffects(cat.effects)
 		local ultimoNivel = nil
+		local buscaEfeitoAtiva = #wizardState.buscaEfeito > 0
 		for _, e in ipairs(ordenados) do
-			if e.grupo == wizardState.efeitoAba then
+			if buscaEfeitoAtiva or e.grupo == wizardState.efeitoAba then
+				local bateBusca = (not buscaEfeitoAtiva) or e.nome:lower():find(wizardState.buscaEfeito:lower(), 1, true) ~= nil
+				if bateBusca then
 				local bloqueado = (e.nivel or 1) > (e.nivelMaxAcessivel or wizardState.level)
 				if not (wizardState.ocultarBloqueados and bloqueado) then
 					if e.nivel ~= ultimoNivel then
@@ -2434,6 +2643,7 @@ local function wizardRender()
 					end)
 				end
 			end
+			end
 		end
 	elseif wizardState.step == 3 then
 		-- PASSO 3: NATUREZA E NOME
@@ -2477,11 +2687,55 @@ local function wizardRender()
 			wizardState.nome = box.Text
 		end)
 	elseif wizardState.step == 4 then
-		-- PASSO 4: REVISÃO
+		-- PASSO 4: REVISÃO (+ Graus de Potência iniciais, so no 1o Hatsu)
 		wizardStepLabel.Text = "Passo 4/4 — Revisão"
 		wizardInfoLabel.Text = "Confira antes de criar."
 		pesoAbasFrame.Visible = false
 		efeitoAbasFrame.Visible = false
+
+		if wizardState.ehPrimeiroHatsu and #wizardState.grauOpcoes > 0 then
+			local totalUsado = 0
+			for _, pontos in pairs(wizardState.grauAlocacao) do
+				totalUsado = totalUsado + pontos
+			end
+
+			local grauTitle = makeLabel(wizardScroll, "GrauTitle",
+				"GRAUS DE POTÊNCIA INICIAIS — " .. totalUsado .. "/" .. wizardState.grauTotal .. " (só no 1º Hatsu)",
+				UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 18), 12)
+			grauTitle.Font = Enum.Font.GothamBold
+			grauTitle.TextColor3 = Color3.fromRGB(255, 200, 0)
+			grauTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+			for gi, caracteristica in ipairs(wizardState.grauOpcoes) do
+				local pontos = wizardState.grauAlocacao[caracteristica] or 0
+				local row = makeFrame(wizardScroll, "Grau_" .. caracteristica, UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 0), Color3.fromRGB(38, 42, 58))
+				local lbl = makeLabel(row, "Lbl", caracteristica .. ": " .. pontos, UDim2.new(0, 8, 0, 0), UDim2.new(0, 220, 1, 0), 12)
+				lbl.TextXAlignment = Enum.TextXAlignment.Left
+				local minusBtn = makeButton(row, "Minus", "-", UDim2.new(1, -70, 0, 2), UDim2.new(0, 30, 0, 24))
+				local plusBtn = makeButton(row, "Plus", "+", UDim2.new(1, -34, 0, 2), UDim2.new(0, 30, 0, 24))
+				minusBtn.Activated:Connect(function()
+					local atual = wizardState.grauAlocacao[caracteristica] or 0
+					if atual > 0 then
+						wizardState.grauAlocacao[caracteristica] = atual - 1
+						wizardRender()
+					end
+				end)
+				plusBtn.Activated:Connect(function()
+					local soma = 0
+					for _, p in pairs(wizardState.grauAlocacao) do soma = soma + p end
+					if soma < wizardState.grauTotal then
+						wizardState.grauAlocacao[caracteristica] = (wizardState.grauAlocacao[caracteristica] or 0) + 1
+						wizardRender()
+					end
+				end)
+			end
+
+			local grauAviso = makeLabel(wizardScroll, "GrauAviso",
+				"Só Redução de Custo, Dano/Cura e CD do TR já têm efeito de jogo. As outras ficam registradas pra quando o sistema completo existir.",
+				UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 28), 9)
+			grauAviso.TextColor3 = Color3.fromRGB(170, 170, 180)
+			grauAviso.TextWrapped = true
+		end
 
 		local resumo = "RESTRIÇÕES:\n"
 		for _, r in pairs(wizardState.restricoes) do
@@ -2543,11 +2797,17 @@ wizardOpen = function(hatsuParaEditar)
 	wizardState.pesoAba = "Todas"
 	wizardState.editId = hatsuParaEditar and hatsuParaEditar.Id or nil
 	wizardState.natureza = "Ataque"
-	wizardState.ocultarBloqueados = true
+	wizardState.ocultarBloqueados = true -- padrao original restaurado (o switch "Ocultar bloqueados" continua disponivel pro jogador revelar tudo)
 	-- Passa o proprio Id (se editando) pra excluir do calculo de P.N gasto,
 	-- exatamente como o webapp faz com editingIdx.
 	wizardState.catalog = GetHatsuCatalog:InvokeServer(wizardState.editId)
 	wizardState.pnDisponivel = wizardState.catalog and wizardState.catalog.pnDisponivel or 0
+	wizardState.ehPrimeiroHatsu = (not hatsuParaEditar) and wizardState.catalog and wizardState.catalog.ehPrimeiroHatsu or false
+	wizardState.grauOpcoes = (wizardState.catalog and wizardState.catalog.grauOptions) or {}
+	wizardState.grauTotal = (wizardState.catalog and wizardState.catalog.grauTotal) or 5
+	wizardState.grauAlocacao = {}
+	wizardState.buscaEfeito = ""
+	wizardState.buscaRestricao = ""
 
 	if hatsuParaEditar then
 		wizardState.editId = hatsuParaEditar.Id
@@ -2598,10 +2858,12 @@ wizardNext.Activated:Connect(function()
 			natureza = wizardState.natureza,
 			efeitos = efeitos,
 			restricoes = restricoes,
+			grauAlocacao = (wizardState.ehPrimeiroHatsu and not wizardState.editId) and wizardState.grauAlocacao or nil,
 		}
 		local result
 		if wizardState.editId then
-			result = EditHatsu:InvokeServer(wizardState.editId, build)
+			result = EditHatsu:InvokeServer(wizardState.editId,
+	build)
 		else
 			result = CreateHatsuV2:InvokeServer(build)
 		end

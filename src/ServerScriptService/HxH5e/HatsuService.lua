@@ -1,6 +1,28 @@
 --[[
-    HxH5e HatsuService v9 (pre-requisito de efeito por nome + restricao
-    extrema aumentando nivel de acesso cruzado)
+    HxH5e HatsuService v13 (Graus de Potencia iniciais: 5 gratis no 1o
+    Hatsu, restritos por categoria)
+    Diferenca da v12: adiciona CATEGORY_GRAU_OPTIONS (lista do que cada
+    categoria pode investir; "Reducao de Custo" e universal) e
+    validateGrauAlocacao. Conectado em 3 mecanicas reais: Reducao de
+    Custo (-5%/ponto no custo de aura), Dano (avanca a tabela de dados
+    do Dano/Cura Focal), CD do TR (+1/ponto no TR final). As demais
+    (Acerto, Atributos, Duracao, Alcance/Area, Numero de Alvos) ficam
+    registradas em hatsu.GrauInicial mas ainda sem mecanica de suporte
+    no jogo. So se aplica no PRIMEIRO Hatsu do personagem (checado via
+    #character.Hatsus == 0 no momento da criacao). Testado: alocacao
+    valida aplica corretamente, categoria invalida e excesso de pontos
+    sao rejeitados, 2o Hatsu nao recebe os pontos gratis de novo.
+    Diferenca da v11 (bonus mecanico generico: cura/RD/critico/dano-
+    bonus por qualquer categoria, via leitura da descricao):
+    - ActivateHatsu nao depende mais de IDs hardcoded "ri_*" (so Reforco).
+      Uma funcao parseMechanicalEffect(desc) interpreta o texto da
+      descricao de QUALQUER efeito selecionado (propria categoria ou
+      emprestada por acesso cruzado) e aplica cura/RD/reducao de margem
+      de critico/dano bonus (em dado ou fixo) automaticamente. Testado:
+      efeitos ja existentes em Reforco continuam identicos (regressao
+      OK) e um efeito de Materializacao (Forja Avancada, nunca mapeado
+      antes) passou a dar bonus de dano corretamente sem nenhum codigo
+      novo especifico pra ele.
     Diferenca da v8:
     - Pre-requisito de efeito por NOME agora e validado quando o texto
       apos o travessao do "req" bate EXATAMENTE com nome(s) de efeito
@@ -30,9 +52,12 @@
       "(PRE+INT+1)/2" pra Especializacao, ou "PRE (pessoas) / INT
       (objetos)" pra Manipulacao — aqui usamos so o atributo primario
       de cada uma pra manter o calculo de TR simples).
-    - Os efeitos com comportamento mecanico especial na ativacao (cura,
-      RD, critico, dano bonus) so estao mapeados pra Reforco (ids
-      ri_e3, ri_e7, ri_e9, ri_e11 etc.).
+    - parseMechanicalEffect e um parser HEURISTICO de texto, nao uma
+      tabela curada. Pode ter falso-negativo (efeito com fraseado
+      incomum nao reconhecido, fica sem bonus mecanico) mas foi
+      testado pra nao dar falso-positivo nos casos reais do banco
+      (ex.: "Dano/Cura Focal" descreve a formula BASE do Hatsu, nao um
+      bonus, e foi explicitamente excluido do parser de dano).
 
     Fonte de verdade: o webapp. Ao atualizar hatsu-db.js, re-rodar o
     pipeline (fetch HTTP + parser JS->Lua) para atualizar o HatsuDB.
@@ -350,19 +375,129 @@ local function findRestriction(catalog, id)
 	return nil
 end
 
+-- ================= Graus de Potencia iniciais (5 gratis no 1o Hatsu) =================
+-- Cada categoria so pode investir nas caracteristicas listadas abaixo.
+-- "Reducao de Custo" e universal (todas as categorias). Confirmado com
+-- o Lucas. So as 3 primeiras (Reducao de Custo, Dano/Cura, CD do TR)
+-- estao conectadas a uma mecanica de verdade agora -- as outras
+-- (Acerto, Atributos, Duracao, Alcance/Area, Numero de Alvos) ficam
+-- registradas no Hatsu pra transparencia, mas ainda SEM efeito
+-- mecanico (pendencia: nao existe sistema de duracao de buff, alcance/
+-- area de efeito, numero de alvos, nem rolagem de acerto separada da
+-- TR ainda no jogo).
+local CATEGORY_GRAU_OPTIONS = {
+	["INTENSIFICAÇÃO"] = { "Acerto", "Atributos", "Dano/Cura", "Redução de Custo" },
+	["TRANSMUTAÇÃO"] = { "Área", "Dano", "Redução de Custo" },
+	["MATERIALIZAÇÃO"] = { "Alcance/Área", "Duração", "Redução de Custo" },
+	["ESPECIALIZAÇÃO"] = { "Alcance/Área", "Dano", "Duração", "CD do TR", "Redução de Custo" },
+	["MANIPULAÇÃO"] = { "Alcance/Área", "Número de Alvos", "Duração", "CD do TR", "Redução de Custo" },
+	["EMISSÃO"] = { "Acerto", "Alcance/Área", "Redução de Custo" },
+}
+
+local GRAU_INICIAL_TOTAL = 5
+
+local function validateGrauAlocacao(categoryId, grauAlocacao)
+	if type(grauAlocacao) ~= "table" then
+		return nil, nil
+	end
+	local permitidas = {}
+	for _, nome in ipairs(CATEGORY_GRAU_OPTIONS[categoryId] or {}) do
+		permitidas[nome] = true
+	end
+	local total = 0
+	for caracteristica, pontos in pairs(grauAlocacao) do
+		if not permitidas[caracteristica] then
+			return nil, "\"" .. tostring(caracteristica) .. "\" não é uma característica permitida pra sua categoria."
+		end
+		if type(pontos) ~= "number" or pontos < 0 or pontos ~= math.floor(pontos) then
+			return nil, "Valor inválido em \"" .. tostring(caracteristica) .. "\"."
+		end
+		total = total + pontos
+	end
+	if total > GRAU_INICIAL_TOTAL then
+		return nil, "Você alocou " .. total .. " pontos, o máximo grátis é " .. GRAU_INICIAL_TOTAL .. "."
+	end
+	return grauAlocacao, nil
+end
+
+function HatsuService.GetGrauOptions(character)
+	local categoryId = getCategoryId(character)
+	return {
+		opcoes = CATEGORY_GRAU_OPTIONS[categoryId] or {},
+		total = GRAU_INICIAL_TOTAL,
+	}
+end
+
 function HatsuService.GetCatalog(character, excludeHatsuId)
 	local catalog = getMergedCatalogForCharacter(character, 0)
 	local pnDisponivel = 0
 	if character then
 		pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, excludeHatsuId)
 	end
+	local categoryId = getCategoryId(character)
 	return {
 		effects = catalog.effects,
 		restrictions = catalog.restrictions,
 		purePN = PURE_PN,
 		pnDisponivel = pnDisponivel,
 		categoria = catalog.label,
+		grauOptions = CATEGORY_GRAU_OPTIONS[categoryId] or {},
+		grauTotal = GRAU_INICIAL_TOTAL,
+		ehPrimeiroHatsu = character and character.Hatsus and #character.Hatsus == 0,
 	}
+end
+
+-- ================= Atributo principal por categoria (regra do Lucas) =================
+-- Reforco = FOR (padrao). Transmutacao = SAB ou INT (usa o maior).
+-- Materializacao (=Conjuracao) = INT. Manipulacao = PRE pra manipular
+-- SERES VIVOS (efeito C.S.C) ou INT pra OBJETOS (efeito C.S.O); sem
+-- nenhum dos dois no Hatsu, usa o maior entre PRE/INT. Emissao = DES.
+-- Especializacao = media (PRE+INT+1)/2 arredondada pra baixo, ANTES de
+-- calcular o modificador. O Lucas avisou que isso pode variar por Hatsu
+-- no futuro -- por ora essa e a regra padrao por categoria.
+local function getPrincipalAttrInfo(character, categoryId, efeitosEscolhidos)
+	local attrs = character.Attributes or {}
+	local function modOf(key)
+		local val = (attrs[key] and attrs[key].value) or 10
+		return math.floor((val - 10) / 2)
+	end
+
+	if categoryId == "TRANSMUTAÇÃO" then
+		local sab, intt = modOf("SAB"), modOf("INT")
+		if sab >= intt then
+			return sab, "SAB"
+		end
+		return intt, "INT"
+	elseif categoryId == "MATERIALIZAÇÃO" then
+		return modOf("INT"), "INT"
+	elseif categoryId == "MANIPULAÇÃO" then
+		local usaCriatura, usaObjeto = false, false
+		for _, e in ipairs(efeitosEscolhidos or {}) do
+			if e.id == "ma_e2" then
+				usaCriatura = true
+			elseif e.id == "ma_e1" then
+				usaObjeto = true
+			end
+		end
+		if usaCriatura and not usaObjeto then
+			return modOf("PRE"), "PRE"
+		elseif usaObjeto and not usaCriatura then
+			return modOf("INT"), "INT"
+		end
+		local pre, intt2 = modOf("PRE"), modOf("INT")
+		if pre >= intt2 then
+			return pre, "PRE"
+		end
+		return intt2, "INT"
+	elseif categoryId == "EMISSÃO" then
+		return modOf("DES"), "DES"
+	elseif categoryId == "ESPECIALIZAÇÃO" then
+		local preVal = (attrs.PRE and attrs.PRE.value) or 10
+		local intVal = (attrs.INT and attrs.INT.value) or 10
+		local mediaVal = math.floor((preVal + intVal + 1) / 2)
+		return math.floor((mediaVal - 10) / 2), "PRE/INT"
+	end
+	return modOf("FOR"), "FOR"
 end
 
 local function getAttributeMod(character, attr)
@@ -375,8 +510,7 @@ function HatsuService.CalcTR(character, efeitos, restricoes)
 	local level = character.Level or 1
 	local base = 8 + math.max(1, math.floor(level / 2))
 	local categoryId = getCategoryId(character)
-	local attrKey = CATEGORY_ATTR[categoryId] or "FOR"
-	local mod = getAttributeMod(character, attrKey)
+	local mod = getPrincipalAttrInfo(character, categoryId, efeitos)
 
 	local efeitoBonus = 0
 	for _, e in ipairs(efeitos or {}) do
@@ -396,7 +530,7 @@ function HatsuService.CalcTR(character, efeitos, restricoes)
 	}
 end
 
-local function calcCustoAura(efeitosEscolhidos, restricoesAplicadas)
+local function calcCustoAura(efeitosEscolhidos, restricoesAplicadas, character)
 	local custo = 50
 	local temExtrema = false
 	local pesadas = 0
@@ -423,12 +557,125 @@ local function calcCustoAura(efeitosEscolhidos, restricoesAplicadas)
 		custo = custo - 10
 	end
 
+	-- Condicao "Condenado" (ver ConditionsDB.lua): +5% de aura em
+	-- QUALQUER tecnica de Nen enquanto ativa.
+	if character and character.Conditions then
+		for _, entry in ipairs(character.Conditions) do
+			if entry.id == "condenado" then
+				custo = custo + 5
+				break
+			end
+		end
+	end
+
 	return math.max(5, custo)
 end
 
-local function detectarNatureza(efeitos)
-	for _, eid in ipairs(efeitos or {}) do
-		if eid == "eg15" then
+-- ================= Tabela de progressao de dados (Grau de Potencia em Dano) =================
+-- Sequencia UNICA e compartilhada (confirmada com o Lucas): qualquer
+-- progressao de dado de dano -- seja o dado BASE de "Dano/Cura Focal"
+-- (que comeca mais a frente, na posicao 6 = 2d6, representando o salto
+-- por já ter investido 50% de aura) ou o dado de um efeito qualquer tipo
+-- "Golpe Reforcado" (que comeca mais atras, ex.: posicao 3 = 1d8) --
+-- percorre essa MESMA tabela. Cada grau investido avanca 1 posicao.
+-- Ao passar da posicao 54, cada grau extra vira +5 de dano fixo.
+local DIE_TABLE = {
+	{ n = 1, d = 4 }, { n = 1, d = 6 }, { n = 1, d = 8 }, { n = 1, d = 10 }, { n = 1, d = 12 }, { n = 2, d = 6 },
+	{ n = 2, d = 8 }, { n = 2, d = 10 }, { n = 2, d = 12 }, { n = 3, d = 10 }, { n = 4, d = 8 }, { n = 3, d = 12 },
+	{ n = 4, d = 10 }, { n = 4, d = 12 }, { n = 5, d = 10 }, { n = 7, d = 8 }, { n = 6, d = 10 }, { n = 8, d = 8 },
+	{ n = 7, d = 10 }, { n = 6, d = 12 }, { n = 8, d = 10 }, { n = 7, d = 12 }, { n = 9, d = 10 }, { n = 8, d = 12 },
+	{ n = 10, d = 10 }, { n = 9, d = 12 }, { n = 11, d = 10 }, { n = 10, d = 12 }, { n = 13, d = 10 }, { n = 11, d = 12 },
+	{ n = 14, d = 10 }, { n = 12, d = 12 }, { n = 15, d = 10 }, { n = 13, d = 12 }, { n = 16, d = 10 }, { n = 14, d = 12 },
+	{ n = 17, d = 10 }, { n = 15, d = 12 }, { n = 19, d = 10 }, { n = 16, d = 12 }, { n = 20, d = 10 }, { n = 17, d = 12 },
+	{ n = 18, d = 12 }, { n = 19, d = 12 }, { n = 20, d = 12 }, { n = 13, d = 20 }, { n = 14, d = 20 }, { n = 15, d = 20 },
+	{ n = 16, d = 20 }, { n = 18, d = 20 }, { n = 20, d = 20 }, { n = 20, d = 20, flat = 5 }, { n = 20, d = 20, flat = 10 }, { n = 20, d = 20, flat = 15 },
+}
+
+local DIE_TABLE_START_DANO_CURA_FOCAL = 6 -- posicao do 2d6 (o "salto" do Dano/Cura Focal)
+
+-- Acha a posicao de um {n,d} conhecido na tabela (pra efeitos que ja
+-- comecam com um dado especifico, tipo Golpe Reforcado = 1d8).
+local function findDieTableIndex(n, d)
+	for i, entry in ipairs(DIE_TABLE) do
+		if entry.n == n and entry.d == d and not entry.flat then
+			return i
+		end
+	end
+	return nil
+end
+
+-- Retorna o dado (e bonus fixo, se ja passou do fim da tabela) na
+-- posicao startIndex + graus, com o "alem do fim" virando +5 fixo por
+-- grau extra (regra confirmada: "ao fim da tabela, REN vira +5 fixo").
+local function stepDieTable(startIndex, graus)
+	local targetIndex = startIndex + (graus or 0)
+	if targetIndex <= #DIE_TABLE then
+		local entry = DIE_TABLE[targetIndex]
+		return entry.n, entry.d, entry.flat or 0
+	end
+	local last = DIE_TABLE[#DIE_TABLE]
+	local overflow = targetIndex - #DIE_TABLE
+	return last.n, last.d, (last.flat or 0) + overflow * 5
+end
+
+-- ================= Efeitos mecanicos genericos (cura/RD/critico/dano bonus) =================
+-- Em vez de mapear efeito por ID por categoria (nao escala pras 6
+-- categorias), interpretamos o texto da propria descricao pra descobrir
+-- a mecanica. Cobre os padroes reais confirmados no banco: cura/RD/
+-- reducao de margem de critico estao hoje quase exclusivos em Reforco,
+-- mas dano-bonus ja aparece em outras categorias tambem (ex.:
+-- Materializacao "Adiciona 1d8 extra ao dano") -- por isso vale ser
+-- generico em vez de so ri_*. Roda sobre QUALQUER efeito selecionado,
+-- de qualquer categoria (propria ou emprestada por acesso cruzado).
+local function parseMechanicalEffect(desc)
+	if type(desc) ~= "string" then
+		return nil
+	end
+	local lower = desc:lower()
+
+	local nDados, dado, attr = desc:match("[Cc]ura%s+(%d*)d(%d+)%s*%+?%s*(%u%u%u)")
+	if not dado then
+		nDados, dado, attr = desc:match("[Rr]ecupera%s+(%d*)d(%d+)%+?(%u%u%u)%s*PV")
+	end
+	if dado then
+		local n = tonumber(nDados)
+		if not n or n == 0 then n = 1 end
+		return { tipo = "cura", n = n, dado = tonumber(dado), attr = attr }
+	end
+
+	local rdVal = desc:match("(%d+)%s*RD%f[%A]")
+	if rdVal and lower:find("reduz") == nil then
+		return { tipo = "rd", valor = tonumber(rdVal) }
+	end
+
+	local critVal = lower:match("reduz margem de crítico em (%d+)")
+	if critVal then
+		return { tipo = "critico", valor = tonumber(critVal) }
+	end
+
+	if lower:find("dano") and not lower:find("grau") and not lower:find("básico") and not lower:find("basico") and not lower:find("passo") then
+		local n2, d2 = desc:match("(%d*)d(%d+)")
+		if d2 then
+			local n = tonumber(n2)
+			if not n or n == 0 then n = 1 end
+			return { tipo = "dano_dado", n = n, dado = tonumber(d2) }
+		end
+		local flat = desc:match("%+%s*(%d+)")
+		if flat then
+			return { tipo = "dano_fixo", valor = tonumber(flat) }
+		end
+	end
+
+	return nil
+end
+
+local function detectarNatureza(efeitosEscolhidos)
+	for _, e in ipairs(efeitosEscolhidos or {}) do
+		if e.id == "eg15" or e.id == "eg10" then
+			return "Hostil"
+		end
+		local mec = parseMechanicalEffect(e.desc)
+		if mec and (mec.tipo == "dano_dado" or mec.tipo == "dano_fixo") then
 			return "Hostil"
 		end
 	end
@@ -512,7 +759,7 @@ function HatsuService.CreateHatsuV2(character, build)
 			}
 		end
 		custoTotal = custoTotal + efeito.custo
-		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes })
+		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes, desc = efeito.desc })
 	end
 
 	local prereqErr = validatePrereqNames(efeitosEscolhidos)
@@ -529,17 +776,42 @@ function HatsuService.CreateHatsuV2(character, build)
 		}
 	end
 
-	local custoAura = calcCustoAura(efeitosEscolhidos, restricoesAplicadas)
+	local custoAura = calcCustoAura(efeitosEscolhidos, restricoesAplicadas, character)
 	local tr = HatsuService.CalcTR(character, efeitosEscolhidos, restricoesAplicadas)
+
+	-- Graus de Potencia iniciais: so se aplicam no PRIMEIRO Hatsu do
+	-- personagem (este ainda nao foi inserido em character.Hatsus, entao
+	-- #character.Hatsus == 0 aqui significa "este e o primeiro").
+	local grauAlocacao = nil
+	local grauDano = 0
+	if character.Hatsus and #character.Hatsus == 0 and build.grauAlocacao then
+		local validado, grauErr = validateGrauAlocacao(myClass, build.grauAlocacao)
+		if grauErr then
+			return { success = false, error = grauErr }
+		end
+		grauAlocacao = validado
+		if grauAlocacao then
+			local reducaoCusto = grauAlocacao["Redução de Custo"] or 0
+			if reducaoCusto > 0 then
+				custoAura = math.max(5, custoAura - reducaoCusto * 5)
+			end
+			local cdTR = grauAlocacao["CD do TR"] or 0
+			if cdTR > 0 then
+				tr.total = tr.total + cdTR
+			end
+			grauDano = (grauAlocacao["Dano"] or grauAlocacao["Dano/Cura"] or 0)
+		end
+	end
 
 	local hatsu = {
 		Id = HatsuService.NextId(character),
 		Nome = build.nome,
 		Tipo = catalog.label,
-		Natureza = detectarNatureza(build.efeitos),
+		Natureza = detectarNatureza(efeitosEscolhidos),
 		Efeitos = efeitosEscolhidos,
 		Restricoes = restricoesAplicadas,
-		Graus = { Dano = 0 },
+		Graus = { Dano = grauDano },
+		GrauInicial = grauAlocacao,
 		CustoAura = custoAura,
 		TR = tr.total,
 		PNUsados = custoLiquido,
@@ -620,7 +892,7 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 			}
 		end
 		custoTotal = custoTotal + efeito.custo
-		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes })
+		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes, desc = efeito.desc })
 	end
 
 	local prereqErr = validatePrereqNames(efeitosEscolhidos)
@@ -636,11 +908,11 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 		}
 	end
 
-	local custoAura = calcCustoAura(efeitosEscolhidos, restricoesAplicadas)
+	local custoAura = calcCustoAura(efeitosEscolhidos, restricoesAplicadas, character)
 	local tr = HatsuService.CalcTR(character, efeitosEscolhidos, restricoesAplicadas)
 
 	hatsu.Nome = build.nome
-	hatsu.Natureza = detectarNatureza(build.efeitos)
+	hatsu.Natureza = detectarNatureza(efeitosEscolhidos)
 	hatsu.Efeitos = efeitosEscolhidos
 	hatsu.Restricoes = restricoesAplicadas
 	hatsu.CustoAura = custoAura
@@ -718,11 +990,10 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 	end
 
 	local categoryId = getCategoryId(character)
-	local attrKey = CATEGORY_ATTR[categoryId] or "FOR"
 	local natureza = hatsu.Natureza or detectarNatureza(hatsu.Efeitos or {})
 	local attrs = character.Attributes or {}
-	local principalVal = (attrs[attrKey] and attrs[attrKey].value) or 10
-	local principalMod = math.max(0, math.floor((principalVal - 10) / 2))
+	local principalModRaw, attrKey = getPrincipalAttrInfo(character, categoryId, hatsu.Efeitos)
+	local principalMod = math.max(0, principalModRaw)
 	local conVal = (attrs.CON and attrs.CON.value) or 10
 	local conMod = math.max(0, math.floor((conVal - 10) / 2))
 
@@ -730,18 +1001,20 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 	local rd = 0
 	local critico = 20
 	for _, e in ipairs(hatsu.Efeitos or {}) do
-		if e.id == "ri_e3" then
-			cura = cura + math.random(1, 8) + conMod
-		elseif e.id == "ri_e26" then
-			cura = cura + math.random(1, 6) + conMod
-		elseif e.id == "ri_e7" then
-			rd = math.max(rd, 3)
-		elseif e.id == "ri_e16" then
-			rd = math.max(rd, 5)
-		elseif e.id == "ri_e25" then
-			rd = math.max(rd, 10)
-		elseif e.id == "ri_e9" then
-			critico = 19
+		local mec = parseMechanicalEffect(e.desc)
+		if mec then
+			if mec.tipo == "cura" then
+				local rolagemCura = 0
+				for _ = 1, mec.n do
+					rolagemCura = rolagemCura + math.random(1, mec.dado)
+				end
+				local attrMod = (mec.attr == "CON" or not mec.attr) and conMod or math.max(0, math.floor(((attrs[mec.attr] and attrs[mec.attr].value or 10) - 10) / 2))
+				cura = cura + rolagemCura + attrMod
+			elseif mec.tipo == "rd" then
+				rd = math.max(rd, mec.valor)
+			elseif mec.tipo == "critico" then
+				critico = math.max(2, critico - mec.valor)
+			end
 		end
 	end
 	if cura > 0 and character.Vitals and character.Vitals.HP then
@@ -772,25 +1045,45 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 		}
 	end
 
-	local d1 = math.random(1, 6)
-	local d2 = math.random(1, 6)
-	local dano = d1 + d2 + principalMod
-	local partes = { "2d6=" .. (d1 + d2), attrKey .. "+" .. principalMod }
+	-- Base de dano: SO existe (2d6+atributo) se o Hatsu tiver "Dano/Cura
+	-- Focal" (eg15) -- confirmado com o Lucas. Sem esse efeito, o dano
+	-- vem SO da soma dos efeitos comprados (sem base fixa nenhuma).
+	local temDanoCuraFocal = false
 	for _, e in ipairs(hatsu.Efeitos or {}) do
-		if e.id == "ri_e11" then
-			local d = math.random(1, 8)
-			dano = dano + d
-			table.insert(partes, "Golpe 1d8=" .. d)
-		elseif e.id == "ri_e20" then
-			local d = math.random(1, 6)
-			dano = dano + d
-			table.insert(partes, "Fúria 1d6=" .. d)
-		elseif e.id == "ri_e27" then
-			dano = dano + 5
-			table.insert(partes, "Força Titânica +5")
-		elseif e.id == "ri_e12" then
-			dano = dano + 5
-			table.insert(partes, "Penetração +5")
+		if e.id == "eg15" then
+			temDanoCuraFocal = true
+			break
+		end
+	end
+
+	local dano = 0
+	local partes = {}
+	if temDanoCuraFocal then
+		-- Grau 0 por enquanto (compra repetida/REN/graus de restricao
+		-- ainda nao alimentam isto -- pendencia da proxima etapa).
+		local nBase, dBase = stepDieTable(DIE_TABLE_START_DANO_CURA_FOCAL, (hatsu.Graus and hatsu.Graus.Dano) or 0)
+		local rolagemBase = 0
+		for _ = 1, nBase do
+			rolagemBase = rolagemBase + math.random(1, dBase)
+		end
+		dano = rolagemBase + principalMod
+		table.insert(partes, nBase .. "d" .. dBase .. "=" .. rolagemBase)
+		table.insert(partes, tostring(principalMod))
+	end
+	for _, e in ipairs(hatsu.Efeitos or {}) do
+		local mec = parseMechanicalEffect(e.desc)
+		if mec then
+			if mec.tipo == "dano_dado" then
+				local rolagemExtra = 0
+				for _ = 1, mec.n do
+					rolagemExtra = rolagemExtra + math.random(1, mec.dado)
+				end
+				dano = dano + rolagemExtra
+				table.insert(partes, tostring(e.nome) .. " " .. mec.n .. "d" .. mec.dado .. "=" .. rolagemExtra)
+			elseif mec.tipo == "dano_fixo" then
+				dano = dano + mec.valor
+				table.insert(partes, tostring(e.nome) .. " +" .. mec.valor)
+			end
 		end
 	end
 	local rolagem = math.random(1, 20)

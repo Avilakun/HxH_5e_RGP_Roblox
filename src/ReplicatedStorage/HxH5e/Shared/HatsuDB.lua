@@ -597,7 +597,7 @@ return {
 			id = "eg15",
 			nome = "Dano/Cura Focal",
 			desc = "+1 grau/passo no dano/cura básico do Hatsu (base: 2d6+Atributo)",
-			req = "Nível 5 ou Acesso a Reforço",
+			req = "Nível 1", -- CORRIGIDO pelo Lucas em 29/08/2026: era "Nivel 5 ou Acesso a Reforco" no dado original do webapp, mas esse efeito e fundamental demais pra ficar atras de nivel 5 -- precisa estar disponivel desde o inicio. Se o pipeline de porte rodar de novo, reaplicar esta correcao.
 			pn = 1,
 		},
 		{
