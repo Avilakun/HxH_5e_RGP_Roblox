@@ -201,6 +201,46 @@ local function parsePrereqNames(req, allEffectNames)
 	return candidatos
 end
 
+-- Reconhece a parte de ATRIBUTO MINIMO num requisito misto (ex:
+-- "Nivel 5 — SAB 3+ e Projetil de Aura", "Nivel 7 — INT ou SAB 3+ ou
+-- 3 restricoes pesadas"). So extrai a condicao de ATRIBUTO -- o resto
+-- (siglas de efeito tipo "C.S.O"/"C.S.C", contagem de restricoes)
+-- continua sem suporte automatico, igual o webapp real tambem nao
+-- resolve isso (confirmado lendo hatsu-creator.js). Suporta multiplos
+-- atributos alternativos ("INT ou SAB 3+" = qualquer um dos dois).
+local ATRIBUTOS_VALIDOS = { FOR = true, DES = true, CON = true, INT = true, SAB = true, PRE = true, CAR = true }
+local function parsePrereqAttrMin(req)
+	if type(req) ~= "string" then
+		return nil
+	end
+	local dashStart, dashEnd = req:find("—", 1, true)
+	if not dashStart then
+		dashStart, dashEnd = req:find("–", 1, true)
+	end
+	if not dashStart then
+		return nil
+	end
+	local rest = req:sub(dashEnd + 1)
+	-- Casa "SIGLA (ou SIGLA)* N+" -- ex: "SAB 3+", "INT ou SAB 3+"
+	local trechoAttrs, valor = rest:match("([%u]+ *[Oo][Uu]? *[%u]*[%u]) *(%d+)%+")
+	if not trechoAttrs then
+		trechoAttrs, valor = rest:match("(%u%u%u) *(%d+)%+")
+	end
+	if not trechoAttrs or not valor then
+		return nil
+	end
+	local attrs = {}
+	for sigla in trechoAttrs:gmatch("%u%u%u") do
+		if ATRIBUTOS_VALIDOS[sigla] then
+			table.insert(attrs, sigla)
+		end
+	end
+	if #attrs == 0 then
+		return nil
+	end
+	return { attrs = attrs, min = tonumber(valor) }
+end
+
 local function splitBeneficios(bnf)
 	if type(bnf) ~= "string" or #bnf == 0 then
 		return {}
@@ -251,6 +291,7 @@ local function buildEffects(categoryId, label)
 			req = e.req,
 			repetivel = e.repetivel or false,
 			prereqNomes = parsePrereqNames(e.req, allNames),
+			prereqAttrMin = parsePrereqAttrMin(e.req),
 		})
 	end
 	local cat = HatsuDB.categorias[categoryId]
@@ -265,6 +306,7 @@ local function buildEffects(categoryId, label)
 			req = e.req,
 			repetivel = e.repetivel or false,
 			prereqNomes = parsePrereqNames(e.req, allNames),
+			prereqAttrMin = parsePrereqAttrMin(e.req),
 		})
 	end
 	return all
@@ -325,7 +367,58 @@ local function getCategoryCatalog(categoryId)
 	return built
 end
 
-local function getMergedCatalogForCharacter(character, extremeCount)
+-- Regra especial de acesso a Especializacao (extraida fielmente do
+-- webapp real, js/data/nen-affinity.js:checkEspecializacaoAccess) --
+-- so Manipulacao/Materializacao podem acessar, e exige:
+-- 1) Pelo menos 3 restricoes selecionadas (+1 pra cada efeito de
+--    Especializacao ja escolhido no mesmo Hatsu -- quanto mais
+--    efeitos de Especializacao, mais restricoes exige).
+-- 2) "Piramide de pesos": nunca pode ter mais restricoes de peso
+--    menor do que de peso imediatamente maior (ex: nao pode ter mais
+--    Leves que Moderadas, se houver Moderadas; nao pode ter mais
+--    Moderadas que Pesadas, se houver Pesadas). "Variavel" nao conta
+--    pra piramide.
+local function checkEspecializacaoAccess(myClass, pesosRestricoesSelecionadas, efeitosEscolhidosIds)
+	if myClass ~= "MANIPULAÇÃO" and myClass ~= "MATERIALIZAÇÃO" then
+		return { ok = false }
+	end
+
+	local espCatalog = HatsuDB.categorias["ESPECIALIZAÇÃO"]
+	local espIds = {}
+	for _, e in ipairs((espCatalog and espCatalog.efeitos) or {}) do
+		espIds[e.id] = true
+	end
+	local specEfeitos = 0
+	for _, id in ipairs(efeitosEscolhidosIds or {}) do
+		if espIds[id] then
+			specEfeitos = specEfeitos + 1
+		end
+	end
+	local needed = 3 + specEfeitos
+
+	local counts = { leve = 0, moderada = 0, pesada = 0, extrema = 0 }
+	local totalRestr = 0
+	for _, peso in ipairs(pesosRestricoesSelecionadas or {}) do
+		if counts[peso] ~= nil then
+			counts[peso] = counts[peso] + 1
+		end
+		totalRestr = totalRestr + 1
+	end
+
+	local pyramidOk = true
+	if counts.leve > counts.moderada and counts.moderada > 0 then
+		pyramidOk = false
+	end
+	if counts.moderada > counts.pesada and counts.pesada > 0 then
+		pyramidOk = false
+	end
+
+	local ok = totalRestr >= needed and pyramidOk
+	return { ok = ok, specEfeitos = specEfeitos, totalRestr = totalRestr, needed = needed, counts = counts, pyramidOk = pyramidOk }
+end
+HatsuService.CheckEspecializacaoAccess = checkEspecializacaoAccess
+
+local function getMergedCatalogForCharacter(character, extremeCount, pesosRestricoesSelecionadas, efeitosEscolhidosIds)
 	local myClass = getCategoryId(character)
 	local charLevel = (character and character.Level) or 0
 	local ownCatalog = getCategoryCatalog(myClass)
@@ -342,7 +435,13 @@ local function getMergedCatalogForCharacter(character, extremeCount)
 
 	for _, otherClass in ipairs(ALL_CATEGORIES) do
 		if otherClass ~= myClass then
-			local maxLevel = getMaxLevelForCategory(myClass, otherClass, charLevel, extremeCount or 0)
+			local maxLevel
+			if otherClass == "ESPECIALIZAÇÃO" then
+				local espCheck = checkEspecializacaoAccess(myClass, pesosRestricoesSelecionadas, efeitosEscolhidosIds)
+				maxLevel = espCheck.ok and charLevel or 0
+			else
+				maxLevel = getMaxLevelForCategory(myClass, otherClass, charLevel, extremeCount or 0)
+			end
 			if maxLevel > 0 then
 				local otherCatalog = getCategoryCatalog(otherClass)
 				for _, e in ipairs(otherCatalog.effects) do
@@ -690,7 +789,7 @@ local function detectarNatureza(efeitosEscolhidos)
 	return "Versatil"
 end
 
-local function validatePrereqNames(efeitosEscolhidos)
+local function validatePrereqNames(efeitosEscolhidos, character)
 	local nomesEscolhidos = {}
 	for _, ef in ipairs(efeitosEscolhidos) do
 		nomesEscolhidos[ef.nome] = true
@@ -706,6 +805,23 @@ local function validatePrereqNames(efeitosEscolhidos)
 			end
 			if not atendido then
 				return "\"" .. tostring(ef.nome) .. "\" precisa que você também inclua " .. table.concat(ef.prereqNomes, " ou ") .. " nesse mesmo Hatsu."
+			end
+		end
+		-- Parte de ATRIBUTO MINIMO de requisitos mistos (ex: "SAB 3+ e
+		-- C.S.O") -- so a parte de atributo e checada de verdade; o
+		-- resto (siglas de efeito, contagem de restricoes) continua
+		-- sem validacao automatica, igual o webapp de referencia.
+		if ef.prereqAttrMin then
+			local atendeuAttr = false
+			for _, sigla in ipairs(ef.prereqAttrMin.attrs) do
+				local val = (character.Attributes and character.Attributes[sigla] and character.Attributes[sigla].value) or 10
+				if val >= ef.prereqAttrMin.min then
+					atendeuAttr = true
+					break
+				end
+			end
+			if not atendeuAttr then
+				return "\"" .. tostring(ef.nome) .. "\" exige " .. table.concat(ef.prereqAttrMin.attrs, " ou ") .. " " .. ef.prereqAttrMin.min .. "+."
 			end
 		end
 	end
@@ -728,6 +844,7 @@ function HatsuService.CreateHatsuV2(character, build)
 
 	local pnRestaurado = 0
 	local extremeCount = 0
+	local pesosSelecionados = {}
 	local restricoesAplicadas = {}
 	for _, r in ipairs(build.restricoes or {}) do
 		local restr = findRestriction(restrictionCatalog, r.id)
@@ -737,6 +854,7 @@ function HatsuService.CreateHatsuV2(character, build)
 		if restr.peso == "extrema" then
 			extremeCount = extremeCount + 1
 		end
+		table.insert(pesosSelecionados, restr.peso)
 		local pura = r.pura or false
 		local ganho = 0
 		if pura and restr.pura then
@@ -765,7 +883,7 @@ function HatsuService.CreateHatsuV2(character, build)
 		end
 	end
 
-	local catalog = getMergedCatalogForCharacter(character, extremeCount)
+	local catalog = getMergedCatalogForCharacter(character, extremeCount, pesosSelecionados, build.efeitos)
 
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, nil)
 	local custoTotal = 0
@@ -784,10 +902,10 @@ function HatsuService.CreateHatsuV2(character, build)
 			}
 		end
 		custoTotal = custoTotal + efeito.custo
-		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes, desc = efeito.desc })
+		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes, prereqAttrMin = efeito.prereqAttrMin, desc = efeito.desc })
 	end
 
-	local prereqErr = validatePrereqNames(efeitosEscolhidos)
+	local prereqErr = validatePrereqNames(efeitosEscolhidos, character)
 	if prereqErr then
 		return { success = false, error = prereqErr }
 	end
@@ -881,6 +999,7 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 
 	local pnRestaurado = 0
 	local extremeCount = 0
+	local pesosSelecionados = {}
 	local restricoesAplicadas = {}
 	for _, r in ipairs(build.restricoes or {}) do
 		local restr = findRestriction(restrictionCatalog, r.id)
@@ -890,6 +1009,7 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 		if restr.peso == "extrema" then
 			extremeCount = extremeCount + 1
 		end
+		table.insert(pesosSelecionados, restr.peso)
 		local pura = r.pura or false
 		local ganho = 0
 		if pura and restr.pura then
@@ -911,7 +1031,7 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 	-- aqui -- so acontece uma vez, na criacao (HatsuService.CreateHatsuV2).
 	-- Editar um Hatsu que ja tinha essa restricao so atualiza o registro.
 
-	local catalog = getMergedCatalogForCharacter(character, extremeCount)
+	local catalog = getMergedCatalogForCharacter(character, extremeCount, pesosSelecionados, build.efeitos)
 
 	local pnDisponivel = NenService.CalcPNDisponivelParaHatsu(character, hatsuId)
 	local custoTotal = 0
@@ -929,10 +1049,10 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 			}
 		end
 		custoTotal = custoTotal + efeito.custo
-		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes, desc = efeito.desc })
+		table.insert(efeitosEscolhidos, { id = efeito.id, nome = efeito.nome, custo = efeito.custo, trBonus = efeito.trBonus or 0, prereqNomes = efeito.prereqNomes, prereqAttrMin = efeito.prereqAttrMin, desc = efeito.desc })
 	end
 
-	local prereqErr = validatePrereqNames(efeitosEscolhidos)
+	local prereqErr = validatePrereqNames(efeitosEscolhidos, character)
 	if prereqErr then
 		return { success = false, error = prereqErr }
 	end

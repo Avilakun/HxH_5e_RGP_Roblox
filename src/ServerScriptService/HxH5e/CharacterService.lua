@@ -424,6 +424,20 @@ local function isChoiceEntry(texto)
 end
 
 local function getChoiceOptions(texto)
+	if texto:find("Qualquer arma simples", 1, true) then
+		-- Agora que ItemsDB.armas tem subcategoria (simples_*/marciais_*/
+		-- cientificas_*/cerco), filtra de verdade pelas simples -- antes
+		-- listava TODAS as armas indiscriminadamente (limitacao
+		-- documentada e resolvida junto com o resgate das tags do
+		-- webapp).
+		local opcoes = {}
+		for _, arma in ipairs(ItemsDB.armas) do
+			if arma.subcategoria and arma.subcategoria:find("simples", 1, true) then
+				table.insert(opcoes, arma.nome)
+			end
+		end
+		return opcoes
+	end
 	if texto:find("Qualquer arma", 1, true) then
 		local opcoes = {}
 		for _, arma in ipairs(ItemsDB.armas) do
