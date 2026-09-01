@@ -68,6 +68,14 @@ local HatsuService = {}
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HatsuDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("HatsuDB"))
 local NenService = require(script.Parent:WaitForChild("NenService"))
+local CharacterServiceRef = require(script.Parent:WaitForChild("CharacterService"))
+local AchievementService = require(script.Parent:WaitForChild("AchievementService"))
+
+-- Restricoes que obrigam escolher entre perder PV ou Sanidade
+-- permanentemente: "rg_p3" (Dano Permanente, perda UNICA de 1d10 na
+-- criacao do Hatsu) e "rg_e4" (Dano Permanente Constante, perde 5 A
+-- CADA ATIVACAO bem-sucedida, ver ActivateHatsu).
+local RESTRICOES_ESCOLHA_VITAL = { rg_p3 = true, rg_e4 = true }
 
 local PURE_PN = {
 	leve = 1,
@@ -735,9 +743,26 @@ function HatsuService.CreateHatsuV2(character, build)
 			ganho = restr.pura
 			pnRestaurado = pnRestaurado + ganho
 		end
+		local penalidadeVital = nil
+		if RESTRICOES_ESCOLHA_VITAL[restr.id] then
+			penalidadeVital = r.penalidadeVital
+			if penalidadeVital ~= "PV" and penalidadeVital ~= "Sanidade" then
+				return { success = false, error = "\"" .. restr.nome .. "\" exige escolher entre perder PV ou Sanidade permanentemente." }
+			end
+		end
 		table.insert(restricoesAplicadas, {
-			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0,
+			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0, penalidadeVital = penalidadeVital,
 		})
+	end
+
+	-- "Dano Permanente" (rg_p3): perda UNICA de 1d10 de PV/Sanidade,
+	-- aplicada agora mesmo (so na criacao -- editar um Hatsu existente
+	-- que ja tinha essa restricao nao reaplica a perda de novo).
+	for _, r in ipairs(restricoesAplicadas) do
+		if r.id == "rg_p3" then
+			local perda = math.random(1, 10)
+			CharacterServiceRef.ApplyPermanentVitalLoss(character, r.penalidadeVital, perda)
+		end
 	end
 
 	local catalog = getMergedCatalogForCharacter(character, extremeCount)
@@ -820,9 +845,11 @@ function HatsuService.CreateHatsuV2(character, build)
 	table.insert(character.Hatsus, hatsu)
 
 	local pnRestante = NenService.CalcPNDisponivelParaHatsu(character, nil)
+	local conquistas = AchievementService.CheckAllLiveAchievements(character)
 	return {
 		success = true,
 		hatsu = hatsu,
+		conquistas = conquistas,
 		message = "Hatsu criado! Efeitos: " .. custoTotal .. " - Restrições: " .. pnRestaurado
 			.. " = " .. custoLiquido .. " P.N. Restante: " .. tostring(pnRestante)
 			.. ". Custo de aura: " .. custoAura .. "%. TR: " .. tr.total,
@@ -869,10 +896,20 @@ function HatsuService.EditHatsu(character, hatsuId, build)
 			ganho = restr.pura
 			pnRestaurado = pnRestaurado + ganho
 		end
+		local penalidadeVital = nil
+		if RESTRICOES_ESCOLHA_VITAL[restr.id] then
+			penalidadeVital = r.penalidadeVital
+			if penalidadeVital ~= "PV" and penalidadeVital ~= "Sanidade" then
+				return { success = false, error = "\"" .. restr.nome .. "\" exige escolher entre perder PV ou Sanidade permanentemente." }
+			end
+		end
 		table.insert(restricoesAplicadas, {
-			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0,
+			id = restr.id, nome = restr.nome, peso = restr.peso, pura = pura, ganho = ganho, trBonus = restr.trBonus or 0, penalidadeVital = penalidadeVital,
 		})
 	end
+	-- Nota: "Dano Permanente" (rg_p3) NAO reaplica a perda de PV/Sanidade
+	-- aqui -- so acontece uma vez, na criacao (HatsuService.CreateHatsuV2).
+	-- Editar um Hatsu que ja tinha essa restricao so atualiza o registro.
 
 	local catalog = getMergedCatalogForCharacter(character, extremeCount)
 
@@ -979,6 +1016,10 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 		return { success = false, error = "Hatsu não encontrado." }
 	end
 
+	if character.EmZetsu then
+		return { success = false, error = "Você está em Zetsu (aura zerada) e não pode ativar Hatsus. Ative outro princípio de Nen para sair do Zetsu primeiro." }
+	end
+
 	local aura = character.Vitals and character.Vitals.Aura
 	local custo = hatsu.CustoAura or 50
 	if aura and aura.Max and aura.Max > 0 then
@@ -987,6 +1028,15 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 			return { success = false, error = "Aura insuficiente (" .. custo .. "% do máximo = " .. custoReal .. ")." }
 		end
 		aura.Current = math.max(0, (aura.Current or 0) - custoReal)
+	end
+
+	-- "Dano Permanente Constante" (rg_e4): perde 5 de PV ou Sanidade
+	-- PERMANENTEMENTE a cada ativacao bem-sucedida (ja passou do gate
+	-- de aura acima, entao a ativacao vai mesmo acontecer).
+	for _, r in ipairs(hatsu.Restricoes or {}) do
+		if r.id == "rg_e4" and r.penalidadeVital then
+			CharacterServiceRef.ApplyPermanentVitalLoss(character, r.penalidadeVital, 5)
+		end
 	end
 
 	local categoryId = getCategoryId(character)
@@ -1088,6 +1138,7 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 	end
 	local rolagem = math.random(1, 20)
 	local ehCritico = rolagem >= critico
+	local conquistaCritico = AchievementService.CheckCritico(character, rolagem)
 	if ehCritico then
 		dano = dano * 2
 		table.insert(partes, "CRÍTICO x2")
@@ -1113,6 +1164,7 @@ function HatsuService.ActivateHatsu(character, hatsuId)
 			cura = cura,
 		},
 		hatsu = hatsu,
+		conquista = conquistaCritico,
 	}
 end
 

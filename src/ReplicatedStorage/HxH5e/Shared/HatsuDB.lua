@@ -452,7 +452,7 @@ return {
 				id = "rg_e4",
 				nome = "Dano Permanente Constante",
 				desc = "Perder 5 de vida/sanidade (por ativação) permanentemente",
-				bnf = "+5 em Testes de Concentração (TR de CON) ou +5 Rodadas ou A cada Acerto/TR imposto com sucesso, recupera toda a aura gasta no Hatsu",
+				bnf = "+4 em Testes de Concentração (TR de CON) ou +4 Rodadas ou A cada Acerto/TR imposto com sucesso, recupera toda a aura gasta no Hatsu",
 				lore = "A restrição obriga o usuário a reduzir permanentemente seus recursos de PV ou Sanidade. A perda pode ser escolhida entre PV ou Sanidade.",
 			},
 			{
@@ -630,7 +630,7 @@ return {
 		},
 	},
 	categorias = {
-		INTENSIFICAÇÃO = {
+		["INTENSIFICAÇÃO"] = {
 			cor = "#00ff9d",
 			attr_princ = "FORÇA",
 			attr_sec = "DES / SAB / CON",
@@ -931,7 +931,7 @@ return {
 				},
 			},
 		},
-		TRANSMUTAÇÃO = {
+		["TRANSMUTAÇÃO"] = {
 			cor = "#d946ef",
 			attr_princ = "SAB / INT",
 			attr_sec = "FOR / PRE",
@@ -1125,7 +1125,7 @@ return {
 				},
 			},
 		},
-		MATERIALIZAÇÃO = {
+		["MATERIALIZAÇÃO"] = {
 			cor = "#ff0055",
 			attr_princ = "INT",
 			attr_sec = "SAB / FOR",
@@ -1528,7 +1528,7 @@ return {
 				},
 			},
 		},
-		ESPECIALIZAÇÃO = {
+		["ESPECIALIZAÇÃO"] = {
 			cor = "#00f0ff",
 			attr_princ = "(PRE+INT+1)/2",
 			attr_sec = "SAB",
@@ -1742,7 +1742,7 @@ return {
 				},
 			},
 		},
-		MANIPULAÇÃO = {
+		["MANIPULAÇÃO"] = {
 			cor = "#9ca3af",
 			attr_princ = "PRE (pessoas) / INT (objetos)",
 			attr_sec = "DES",
@@ -1942,7 +1942,7 @@ return {
 				},
 			},
 		},
-		EMISSÃO = {
+		["EMISSÃO"] = {
 			cor = "#ffe600",
 			attr_princ = "DES",
 			attr_sec = "FOR / INT",

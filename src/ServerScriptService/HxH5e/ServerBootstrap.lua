@@ -7,6 +7,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HxH5e = ReplicatedStorage:WaitForChild("HxH5e")
 
+--------------------------------------------------
+-- REMOTES + EVENTOS (criados primeiro)
+--------------------------------------------------
+
 local function getOrCreateRemote(name)
 	local remote = HxH5e:FindFirstChild(name)
 	if not remote then
@@ -42,12 +46,24 @@ local GainXP = getOrCreateRemote("GainXP")
 local AddGrau = getOrCreateRemote("AddGrau")
 local AddRestricao = getOrCreateRemote("AddRestricao")
 local BasicAttack = getOrCreateRemote("BasicAttack")
+local AttemptReaction = getOrCreateRemote("AttemptReaction")
+local EnemyTelegraph = getOrCreateEvent("EnemyTelegraph")
+local EnemyAttackResult = getOrCreateEvent("EnemyAttackResult")
 local GetHatsuCatalog = getOrCreateRemote("GetHatsuCatalog")
 local GetGrauOptions = getOrCreateRemote("GetGrauOptions")
 local SetBioField = getOrCreateRemote("SetBioField")
 local ApplyCondition = getOrCreateRemote("ApplyCondition")
 local RemoveCondition = getOrCreateRemote("RemoveCondition")
 local GetConditionsCatalog = getOrCreateRemote("GetConditionsCatalog")
+local BuyItem = getOrCreateRemote("BuyItem")
+local SellItem = getOrCreateRemote("SellItem")
+local GetItemsCatalog = getOrCreateRemote("GetItemsCatalog")
+local RollAttributePool = getOrCreateRemote("RollAttributePool")
+local GetStandardArray = getOrCreateRemote("GetStandardArray")
+local GetNextPendingLevel = getOrCreateRemote("GetNextPendingLevel")
+local RollHitDie = getOrCreateRemote("RollHitDie")
+local GetMediaHitDie = getOrCreateRemote("GetMediaHitDie")
+local ConfirmLevelUp = getOrCreateRemote("ConfirmLevelUp")
 local CreateHatsuV2 = getOrCreateRemote("CreateHatsuV2")
 local GetRaces = getOrCreateRemote("GetRaces")
 local GetRaceBonusInfo = getOrCreateRemote("GetRaceBonusInfo")
@@ -58,16 +74,35 @@ local GetInclinations = getOrCreateRemote("GetInclinations")
 local GetSkillsInfo = getOrCreateRemote("GetSkillsInfo")
 local BuffTick = getOrCreateEvent("BuffTick")
 local EditHatsu = getOrCreateRemote("EditHatsu")
+local AchievementUnlocked = getOrCreateEvent("AchievementUnlocked")
+local GetAchievementsCatalog = getOrCreateRemote("GetAchievementsCatalog")
+local GetOrganizations = getOrCreateRemote("GetOrganizations")
+local JoinOrganization = getOrCreateRemote("JoinOrganization")
+local CreateGuild = getOrCreateRemote("CreateGuild")
+local SetAlignment = getOrCreateRemote("SetAlignment")
+local SugarAura = getOrCreateRemote("SugarAura")
+local PromoteVampiroCasta = getOrCreateRemote("PromoteVampiroCasta")
+local GetEffectiveStats = getOrCreateRemote("GetEffectiveStats")
+
+--------------------------------------------------
+-- MÓDULOS (agora que os remotes existem)
+--------------------------------------------------
 
 local CharacterService = require(script.Parent:WaitForChild("CharacterService"))
 local NenService = require(script.Parent:WaitForChild("NenService"))
 local HatsuService = require(script.Parent:WaitForChild("HatsuService"))
 local BuffManager = require(script.Parent:WaitForChild("BuffManager"))
+local LevelUpService = require(script.Parent:WaitForChild("LevelUpService"))
+local AchievementService = require(script.Parent:WaitForChild("AchievementService"))
+local SkillSystem = require(script.Parent:WaitForChild("SkillSystem"))
+local TimeService = require(script.Parent:WaitForChild("TimeService"))
+local OrganizationService = require(script.Parent:WaitForChild("OrganizationService"))
 local CombatService = require(script.Parent:WaitForChild("CombatService"))
 
+-- ================= DEBOUNCE DE SAVE (evita flood no DataStore) =================
 local lastSaveTime = {}
 local savePending = {}
-local SAVE_INTERVAL = 5
+local SAVE_INTERVAL = 5 -- segundos entre saves
 
 local function throttledSave(player)
 	local key = player.UserId
@@ -97,59 +132,185 @@ task.spawn(function()
 	end
 end)
 
-local XP_PARA_PROXIMO = {
-	[0] = 50, [1] = 150, [2] = 350, [3] = 500, [4] = 800,
-	[5] = 1000, [6] = 1500, [7] = 2500, [8] = 3200, [9] = 4000,
-	[10] = 5000, [11] = 6500, [12] = nil,
-}
+--------------------------------------------------
+-- TABELA DE XP (confirmada com o Manual)
+--------------------------------------------------
 
-local EVOLUCAO_MARCOS = {
-	[1] = 1,
-	[3] = 2,
-	[6] = 2,
-	[12] = 3,
-}
+--------------------------------------------------
+-- XP (função compartilhada) -- ver LevelUpService.lua pra tabela
+-- completa de recompensas por nivel, dado de vida, RDM etc. Ganhar XP
+-- so ENFILEIRA os niveis (character.PendingLevelUps); cada nivel so e
+-- efetivado quando o cliente chamar ConfirmLevelUp (depois de rolar o
+-- dado de vida e escolher atributo-ou-aura quando aplicavel).
+--------------------------------------------------
 
-local function getEvolucaoReward(level)
-	return EVOLUCAO_MARCOS[level] or 0
+GetAchievementsCatalog.OnServerInvoke = function(player)
+	return AchievementService.GetCatalog()
+end
+
+GetOrganizations.OnServerInvoke = function(player)
+	return OrganizationService.GetAllOrganizations()
+end
+
+local VALID_ALIGNMENTS = { ["Heróico"] = true, ["Caótico"] = true, ["Neutro"] = true, ["Maligno"] = true }
+SetAlignment.OnServerInvoke = function(player, alignment)
+	if not VALID_ALIGNMENTS[alignment] then
+		return { success = false, error = "Tendência inválida." }
+	end
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	character.Alignment = alignment
+	throttledSave(player)
+	return { success = true, alignment = alignment }
+end
+
+SugarAura.OnServerInvoke = function(player, modo)
+	local result = CombatService.SugarAuraOnDummy(player, modo)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+PromoteVampiroCasta.OnServerInvoke = function(player, force)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.PromoteVampiroCasta(character, force)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+-- Expoe os valores EFETIVOS (apos condicoes tipo Exaustao) pro cliente
+-- poder mostrar na Ficha/HUD -- ex: deslocamento zerado, HP maximo
+-- reduzido, sem precisar recalcular a mesma logica no cliente.
+GetEffectiveStats.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local mods = CharacterService.GetConditionModifiers(character)
+	return {
+		success = true,
+		ca = CharacterService.GetEffectiveCA(character),
+		deslocamento = CharacterService.GetEffectiveDeslocamento(character),
+		hpMax = CharacterService.GetEffectiveMaxHP(character),
+		mods = mods,
+	}
+end
+
+JoinOrganization.OnServerInvoke = function(player, orgId)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = OrganizationService.JoinOrganization(character, orgId)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+CreateGuild.OnServerInvoke = function(player, nome, tipo, tipoEconomico, titulosCustom)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = OrganizationService.CreateGuild(character, nome, tipo, tipoEconomico, titulosCustom)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+-- Le result.conquista (uma so) e/ou result.conquistas (lista) e dispara
+-- o evento de badge pro jogador certo, pra cada conquista NOVA.
+local function notificarConquistas(player, result)
+	if not result then return end
+	if result.conquista then
+		AchievementUnlocked:FireClient(player, result.conquista)
+	end
+	if result.conquistas then
+		for _, ach in ipairs(result.conquistas) do
+			AchievementUnlocked:FireClient(player, ach)
+		end
+	end
 end
 
 local function applyXP(player, character, amount)
-	character.XP = (character.XP or 0) + amount
-	local leveled = false
-	local novosPontos = 0
-	while true do
-		local need = XP_PARA_PROXIMO[character.Level]
-		if not need then
-			break
-		end
-		if character.XP >= need then
-			character.XP = character.XP - need
-			character.Level = character.Level + 1
-			leveled = true
-			novosPontos = novosPontos + getEvolucaoReward(character.Level)
-		else
-			break
-		end
-	end
-	character.XPNext = XP_PARA_PROXIMO[character.Level]
-	if novosPontos > 0 then
-		character.PontosEvolucao = (character.PontosEvolucao or 0) + novosPontos
+	local resultado = LevelUpService.QueueLevelUps(character, amount)
+	if not resultado.success then
+		return resultado.error
 	end
 	character.UpdatedAt = os.time()
 	throttledSave(player)
-	local msg = "+" .. amount .. " XP. Nível " .. character.Level
-	if leveled then
-		msg = msg .. " — SUBIU DE NÍVEL!"
-		if novosPontos > 0 then
-			msg = msg .. " (+" .. novosPontos .. " Ponto(s) de Evolução — total: " .. (character.PontosEvolucao or 0) .. ")"
-		end
+	local msg = "+" .. resultado.ganho .. " XP"
+	if resultado.multiplicador > 1 then
+		msg = msg .. " (x" .. resultado.multiplicador .. ")"
+	end
+	if #resultado.niveisEnfileirados > 0 then
+		msg = msg .. " — Nível(is) disponível(is) para confirmar: " .. table.concat(resultado.niveisEnfileirados, ", ") .. "!"
 	end
 	return msg
 end
 
+--------------------------------------------------
+-- GUILDAS: pagamento semanal automatico (nunca via remote do jogador,
+-- pra evitar trapaça -- so um loop do proprio servidor, que checa se
+-- ja passou 1 semana REAL pra cada guilda mercenaria).
+--------------------------------------------------
+
+task.spawn(function()
+	while true do
+		task.wait(3600) -- checa a cada 1h de tempo real (o gatilho real e semanal)
+		local ok, orgs = pcall(OrganizationService.GetAllOrganizations)
+		if ok then
+			for _, org in ipairs(orgs) do
+				if org.tipoEconomico == "Mercenaria" then
+					pcall(function()
+						OrganizationService.ProcessWeeklyPayout(org.id, false, CharacterService.GetActiveCharacter)
+					end)
+				end
+			end
+		end
+	end
+end)
+
+--------------------------------------------------
+-- PLAYER ENTROU / SAIU
+--------------------------------------------------
+
+-- ================= Pericias: efeito passivo de movimento =================
+-- Regra de ouro (ver SkillSystem.lua): Atletismo afeta o movimento no
+-- MUNDO de forma passiva, sem rolagem nenhuma -- so aplica direto no
+-- Humanoid. Base do Roblox: WalkSpeed=16, JumpHeight=7.2.
+-- Formula (provisoria, ver nota de pendencia em SkillSystem.lua sobre
+-- a escala de proficiencia): +0.5 WalkSpeed e +5% JumpHeight por ponto
+-- de bonus de Atletismo (minimo 0, nunca penaliza).
+local function applyPassiveMovement(player)
+	local avatarChar = player.Character
+	if not avatarChar then return end
+	local humanoid = avatarChar:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	local rpgChar = CharacterService.GetActiveCharacter(player)
+	if not rpgChar then return end
+	local bonus = math.max(0, SkillSystem.GetSkillBonus(rpgChar, "Atletismo"))
+	humanoid.WalkSpeed = 16 + bonus * 0.5
+	humanoid.JumpHeight = 7.2 * (1 + bonus * 0.05)
+end
+
 local function onPlayerAdded(player)
 	CharacterService.LoadPlayer(player)
+
+	player.CharacterAdded:Connect(function()
+		task.wait(0.1) -- garante que o Humanoid ja existe
+		applyPassiveMovement(player)
+	end)
 
 	local character = CharacterService.GetActiveCharacter(player)
 	if character then
@@ -179,13 +340,23 @@ end
 
 Players.PlayerRemoving:Connect(function(player)
 	BuffManager.Clear(player)
-	local character = CharacterService.GetActiveCharacter(player)
-	if character then
-		CharacterService.SavePlayer(player)
-	end
+	Players.PlayerRemoving:Connect(function(player)
+		BuffManager.Clear(player)
+		-- Salva o estado final ao sair (garante que nada se perca)
+		local character = CharacterService.GetActiveCharacter(player)
+		if character then
+			CharacterService.SavePlayer(player)
+		end
+	end)
 end)
 
 CombatService.Setup(CharacterService)
+SkillSystem.Setup(CharacterService)
+TimeService.Start()
+
+--------------------------------------------------
+-- FICHA
+--------------------------------------------------
 
 GetCharacter.OnServerInvoke = function(player)
 	return CharacterService.GetActiveCharacter(player)
@@ -199,16 +370,26 @@ SetActiveCharacter.OnServerInvoke = function(player, characterId)
 	local success = CharacterService.SetActiveCharacter(player, characterId)
 	if success then
 		throttledSave(player)
+		applyPassiveMovement(player)
 	end
 	return success
 end
 
-CreateCharacter.OnServerInvoke = function(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations)
-	local result = CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations)
+CreateCharacter.OnServerInvoke = function(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida)
+	local result = CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida)
 	if result and result.success then
 		throttledSave(player)
+		applyPassiveMovement(player)
 	end
 	return result
+end
+
+RollAttributePool.OnServerInvoke = function(player)
+	return CharacterService.RollAttributePool(player)
+end
+
+GetStandardArray.OnServerInvoke = function(player)
+	return CharacterService.GetStandardArray(player)
 end
 
 GetRaces.OnServerInvoke = function(player)
@@ -243,6 +424,10 @@ DeleteCharacter.OnServerInvoke = function(player, characterId)
 	return result
 end
 
+--------------------------------------------------
+-- NEN
+--------------------------------------------------
+
 GetNenStatus.OnServerInvoke = function(player)
 	local character = CharacterService.GetActiveCharacter(player)
 	if not character then
@@ -259,6 +444,7 @@ TrainPrinciple.OnServerInvoke = function(player, principle)
 	local result = NenService.TrainPrinciple(character, principle)
 	if result.success then
 		throttledSave(player)
+		notificarConquistas(player, result)
 	end
 	return result
 end
@@ -274,9 +460,14 @@ ActivatePrinciple.OnServerInvoke = function(player, principle)
 			BuffManager.Start(player, principle, 6)
 		end
 		throttledSave(player)
+		notificarConquistas(player, result)
 	end
 	return result
 end
+
+--------------------------------------------------
+-- HATSU
+--------------------------------------------------
 
 CreateHatsu.OnServerInvoke = function(player, nome, tipo)
 	local character = CharacterService.GetActiveCharacter(player)
@@ -324,6 +515,7 @@ ActivateHatsu.OnServerInvoke = function(player, hatsuId)
 	local result = HatsuService.ActivateHatsu(character, hatsuId)
 	if result.success then
 		throttledSave(player)
+		notificarConquistas(player, result)
 	end
 	return result
 end
@@ -358,7 +550,6 @@ SetBioField.OnServerInvoke = function(player, characterId, field, value)
 	end
 	return result
 end
-
 ApplyCondition.OnServerInvoke = function(player, condId, grau)
 	local character = CharacterService.GetActiveCharacter(player)
 	if not character then return { success = false, error = "Nenhum personagem ativo." } end
@@ -383,6 +574,30 @@ GetConditionsCatalog.OnServerInvoke = function(player)
 	local ConditionsDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("ConditionsDB"))
 	return ConditionsDB.Condicoes
 end
+BuyItem.OnServerInvoke = function(player, itemNome, quantidade)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	local result = CharacterService.BuyItem(character, itemNome, quantidade)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+SellItem.OnServerInvoke = function(player, itemNome, quantidade)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	local result = CharacterService.SellItem(character, itemNome, quantidade)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+GetItemsCatalog.OnServerInvoke = function(player)
+	local ItemsDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("ItemsDB"))
+	return ItemsDB.Todos
+end
 
 CreateHatsuV2.OnServerInvoke = function(player, build)
 	local character = CharacterService.GetActiveCharacter(player)
@@ -392,9 +607,14 @@ CreateHatsuV2.OnServerInvoke = function(player, build)
 	local result = HatsuService.CreateHatsuV2(character, build)
 	if result.success then
 		throttledSave(player)
+		notificarConquistas(player, result)
 	end
 	return result
 end
+
+--------------------------------------------------
+-- XP / NÍVEL
+--------------------------------------------------
 
 GainXP.OnServerInvoke = function(player, amount)
 	local character = CharacterService.GetActiveCharacter(player)
@@ -411,20 +631,64 @@ GainXP.OnServerInvoke = function(player, amount)
 		message = msg,
 		level = character.Level,
 		xp = character.XP,
-		pontosEvolucao = character.PontosEvolucao or 0,
+		pendingLevelUps = character.PendingLevelUps or {},
 	}
 end
 
+GetNextPendingLevel.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return nil end
+	return LevelUpService.GetNextPendingLevel(character)
+end
+
+RollHitDie.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	return LevelUpService.RollHitDie(character)
+end
+
+GetMediaHitDie.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	return LevelUpService.GetMediaHitDie(character)
+end
+
+ConfirmLevelUp.OnServerInvoke = function(player, hitGain, attrChoice)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Nenhum personagem ativo." } end
+	local result = LevelUpService.ConfirmLevelUp(character, hitGain, attrChoice)
+	if result.success then
+		throttledSave(player)
+		notificarConquistas(player, result)
+	end
+	return result
+end
+
+--------------------------------------------------
+-- COMBATE
+--------------------------------------------------
+
 BasicAttack.OnServerInvoke = function(player)
 	local result = CombatService.BasicAttack(player)
-	if result and result.success and result.killed then
-		local character = CharacterService.GetActiveCharacter(player)
-		if character then
-			result.xpMsg = applyXP(player, character, 10)
+	if result and result.success then
+		notificarConquistas(player, result)
+		if result.killed then
+			local character = CharacterService.GetActiveCharacter(player)
+			if character then
+				result.xpMsg = applyXP(player, character, 10)
+			end
 		end
 	end
 	return result
 end
+
+AttemptReaction.OnServerInvoke = function(player, reactionType)
+	return CombatService.AttemptReaction(player, reactionType)
+end
+
+--------------------------------------------------
+-- GRAUS DE POTÊNCIA
+--------------------------------------------------
 
 AddGrau.OnServerInvoke = function(player, hatsuId, caracteristica)
 	local character = CharacterService.GetActiveCharacter(player)
@@ -437,6 +701,10 @@ AddGrau.OnServerInvoke = function(player, hatsuId, caracteristica)
 	end
 	return result
 end
+
+--------------------------------------------------
+-- RESTRIÇÕES DE HATSU
+--------------------------------------------------
 
 AddRestricao.OnServerInvoke = function(player, hatsuId, restricaoId)
 	local character = CharacterService.GetActiveCharacter(player)

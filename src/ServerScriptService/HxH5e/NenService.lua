@@ -13,12 +13,21 @@
 
 local NenService = {}
 
+local AchievementService = require(script.Parent:WaitForChild("AchievementService"))
+
 -- ================= Pool de P.N por nível (identico a calcularPHBase do webapp) =================
+-- Nivel 0 tratado como 1 (webapp usa "parseInt(level) || 1", e 0 e falsy em JS).
 local PN_POR_NIVEL = {
 	[1] = 6, [2] = 8, [3] = 10, [4] = 12, [5] = 14,
 	[6] = 7, [7] = 10, [8] = 13, [9] = 16, [10] = 19, [11] = 22, [12] = 25,
 }
 
+-- CORRIGIDO em relação ao webapp: no nível 0 o personagem ainda NÃO
+-- despertou o Nen ("Batismo e Despertar" só acontece no nível 1, confirmado
+-- na tabela de progressão do Manual: coluna "Ponto de Domínio de NEN" no
+-- nível 0 é "-"). O webapp tem um bug de JS aqui (parseInt(level)||1 trata
+-- nível 0 como se fosse nível 1, por 0 ser "falsy"), dando P.N indevido a
+-- quem ainda não despertou. Corrigido: nível 0 = 0 P.N, sem exceção.
 local function getPHBase(character)
 	local level = (character and character.Level) or 0
 	if level < 1 then
@@ -30,6 +39,8 @@ local function getPHBase(character)
 	return PN_POR_NIVEL[level] or 25
 end
 
+-- ================= Config =================
+
 local PRINCIPLE_COST = {
 	Ten = 0, Ren = 10, Zetsu = 0,
 	En = 5, Inp = 10, Gyo = 5, Shu = 5, Ken = 30, Ko = 30, Ryu = 15,
@@ -37,6 +48,7 @@ local PRINCIPLE_COST = {
 
 local ADVANCED_KEYS = { "En", "Inp", "Gyo", "Shu", "Ken", "Ko", "Ryu" }
 
+-- Regra de desbloqueio (app)
 local ADVANCED_REQUIREMENTS = {
 	En = "Zetsu", Inp = "Zetsu", Gyo = "Zetsu",
 	Shu = "Ren", Ken = "Ren",
@@ -52,6 +64,8 @@ local function getDominio(character)
 	end
 	return nen.Dominio
 end
+
+-- ================= Cálculos =================
 
 function NenService.CalcTenRD(character)
 	local d = getDominio(character)
@@ -139,6 +153,8 @@ function NenService.CalcAdvancedBonus(character, key)
 	return out
 end
 
+-- ================= Pool de P.N =================
+
 function NenService.CalcPNSpentInDominio(character)
 	local d = getDominio(character)
 	local spent = 0
@@ -160,6 +176,9 @@ function NenService.CalcPNDisponivel(character)
 	return NenService.CalcPNDisponivelParaHatsu(character, nil)
 end
 
+-- Soma o PNUsados de todos os Hatsus do personagem, exceto o de excludeHatsuId
+-- (usado na edicao, pra reaproveitar o P.N que o proprio Hatsu ja ocupava —
+-- identico a calcPNSpentInOtherHatsus(char, editingIdx) do webapp).
 function NenService.CalcPNSpentInHatsus(character, excludeHatsuId)
 	local spent = 0
 	for _, h in ipairs(character.Hatsus or {}) do
@@ -170,12 +189,17 @@ function NenService.CalcPNSpentInHatsus(character, excludeHatsuId)
 	return spent
 end
 
+-- P.N disponivel para criar/editar um Hatsu: reserva total do nivel, menos o
+-- que ja foi gasto em Dominio, menos o que os OUTROS Hatsus ja usam.
+-- Identico a calcPNDisponivelParaHatsu(char, editingIdx) do webapp.
 function NenService.CalcPNDisponivelParaHatsu(character, excludeHatsuId)
 	local total = getPHBase(character)
 	local dominio = NenService.CalcPNSpentInDominio(character)
 	local outrosHatsus = NenService.CalcPNSpentInHatsus(character, excludeHatsuId)
 	return math.max(0, total - dominio - outrosHatsus)
 end
+
+-- ================= Treino de Princípio =================
 
 function NenService.TrainPrinciple(character, principle)
 	if type(character) ~= "table" or type(principle) ~= "string" then
@@ -196,7 +220,8 @@ function NenService.TrainPrinciple(character, principle)
 		end
 		d[principle] = current + 1
 		character.UpdatedAt = os.time()
-		return { success = true, message = principle .. " agora é nível " .. tostring(d[principle]) .. "." }
+		local conquistas = AchievementService.CheckAllLiveAchievements(character)
+		return { success = true, message = principle .. " agora é nível " .. tostring(d[principle]) .. ".", conquistas = conquistas }
 	end
 
 	for _, key in ipairs(ADVANCED_KEYS) do
@@ -221,12 +246,15 @@ function NenService.TrainPrinciple(character, principle)
 			end
 			d[key] = true
 			character.UpdatedAt = os.time()
-			return { success = true, message = key .. " desbloqueado!" }
+			local conquistas = AchievementService.CheckAllLiveAchievements(character)
+			return { success = true, message = key .. " desbloqueado!", conquistas = conquistas }
 		end
 	end
 
 	return { success = false, error = "Princípio desconhecido: " .. tostring(principle) }
 end
+
+-- ================= Ativação de Princípio =================
 
 local activeBuffs = {}
 
@@ -285,16 +313,42 @@ function NenService.ActivatePrinciple(player, character, principle)
 	end
 	aura.Current = aura.Current - custoReal
 
+	-- Contadores de ativacao pras conquistas "Ten/Ren/Zetsu Nx vezes"
+	-- (ver AchievementsDB.lua) -- so ATIVACAO conta aqui, treinar/subir
+	-- de grau e outra coisa (ja coberto em TrainPrinciple).
+	local conquistaAtivacao = nil
+	if principle == "Ten" then
+		local r = AchievementService.IncrementCounter(character, "TenAtivacoes", "ten_20x")
+		if r.isNew then conquistaAtivacao = r.achievement end
+	elseif principle == "Ren" then
+		local r = AchievementService.IncrementCounter(character, "RenAtivacoes", "ren_20x")
+		if r.isNew then conquistaAtivacao = r.achievement end
+	elseif principle == "Zetsu" then
+		local r = AchievementService.IncrementCounter(character, "ZetsuAtivacoes", "zetsu_10x")
+		if r.isNew then conquistaAtivacao = r.achievement end
+	end
+
 	if principle == "Zetsu" then
 		local z = NenService.CalcZetsuBonus(character)
 		local rec = math.floor(auraMax * z.auraPct / 100)
 		aura.Current = math.min(aura.Max, aura.Current + rec)
+		-- Entra em modo Zetsu CONTINUO (nao e mais so um efeito pontual):
+		-- fica assim ate ativar outro principio de Nen (ver abaixo, todo
+		-- outro principio sai do Zetsu automaticamente -- fisicamente
+		-- nao da pra manter aura zerada e usar outro principio ao mesmo
+		-- tempo). Usado por HatsuService.ActivateHatsu pra bloquear
+		-- ativacao de Hatsu enquanto em Zetsu.
+		character.EmZetsu = true
 		return {
 			success = true,
-			message = "Zetsu: +" .. rec .. " de aura recuperada (+" .. z.auraPct .. "%).",
+			message = "Zetsu: +" .. rec .. " de aura recuperada (+" .. z.auraPct .. "%). Voce fica vulneravel: Hatsu bloqueado ate sair do Zetsu.",
 			aura = aura.Current,
+			conquista = conquistaAtivacao,
 		}
 	end
+
+	-- Qualquer OUTRO principio de Nen tira automaticamente do modo Zetsu.
+	character.EmZetsu = false
 
 	local buffs = activeBuffs[player]
 	if not buffs then
@@ -327,7 +381,7 @@ function NenService.ActivatePrinciple(player, character, principle)
 		message = "RYU ativado: fluidez de aura por 6s."
 	end
 
-	return { success = true, message = message, aura = aura.Current }
+	return { success = true, message = message, aura = aura.Current, conquista = conquistaAtivacao }
 end
 
 function NenService.ClearSession(player)

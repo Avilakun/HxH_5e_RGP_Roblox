@@ -13,12 +13,18 @@ local CharacterSchema = require(HxH5e:WaitForChild("Shared"):WaitForChild("Chara
 local SystemDB = require(HxH5e:WaitForChild("Shared"):WaitForChild("SystemDB"))
 local CharacterRepository = require(script.Parent:WaitForChild("CharacterRepository"))
 local ConditionsDB = require(HxH5e:WaitForChild("Shared"):WaitForChild("ConditionsDB"))
+local ItemsDB = require(HxH5e:WaitForChild("Shared"):WaitForChild("ItemsDB"))
 
 local CharacterService = {}
+
+-- ================= Config =================
 
 local NAME_MIN = 1
 local NAME_MAX = 24
 local NAME_FORBIDDEN = "[<>%[%]{}|/\:\";%?%*%c]"
+
+-- ================= Tabelas do app (js/data/nen-affinity.js) =================
+-- CATEGORY_ROLL_TABLE EXATA (1d100) — conferida no arquivo enviado.
 
 local NEN_CATEGORY_ROLL_TABLE = {
 	{ min = 1,  max = 18,  classId = "INTENSIFICAÇÃO" },
@@ -29,6 +35,9 @@ local NEN_CATEGORY_ROLL_TABLE = {
 	{ min = 91, max = 100, classId = "ESPECIALIZAÇÃO" },
 }
 
+-- Genialidade (2d20). Limites derivados da distribuição de 2d20 (400 combinações),
+-- batendo com as % do app (creator.js): Normal ~78,5% / Talentoso ~18,5% / Gênio ~2,5% / Ultimate ~0,25%.
+-- ⚠️ Se o app tiver uma tabela própria de genialidade, ajustar aqui (1 lugar só).
 local NEN_GENIUS_TABLE = {
 	{ min = 40, max = 40, tier = "Ultimate",  efeito = "XP dobrado + 5 Graus de Potência para distribuir livremente." },
 	{ min = 37, max = 39, tier = "Genio",     efeito = "Recebe XP 1,5x maior em qualquer situação." },
@@ -74,6 +83,8 @@ local function rollNenGenius()
 	return tier, roll, efeito
 end
 
+-- ================= Sessões em memória =================
+
 local sessions = {}
 
 local function getSession(player)
@@ -110,6 +121,8 @@ local function sanitizeName(rawName)
 	return name
 end
 
+-- ================= Racas (SystemDB) =================
+
 local function findRaceByName(raceName)
 	if type(raceName) ~= "string" then
 		return nil
@@ -122,6 +135,11 @@ local function findRaceByName(raceName)
 	return nil
 end
 
+-- Aplica aumento_atributo da raca ao character.Attributes.
+-- Só aplica quando aumento_atributo é uma tabela de {ATTR = delta}.
+-- Quando é um texto ("Escolha +2", "Distribua 3 pontos...", etc.) fica
+-- registrado em character.RaceBonusPending para o jogador escolher depois
+-- (wizard de escolha ainda não implementado — pendência conhecida).
 local function applyRaceBonus(character, race)
 	if not race then
 		return
@@ -133,6 +151,8 @@ local function applyRaceBonus(character, race)
 			if entry then
 				entry.value = entry.value + delta
 			else
+				-- Atributo especial da raca (ex.: INT_ou_SAB, Fisico) que nao
+				-- existe no schema padrao: guarda para revisao manual.
 				character.RaceBonusPending = character.RaceBonusPending or {}
 				table.insert(character.RaceBonusPending, attr .. " +" .. tostring(delta))
 			end
@@ -151,6 +171,9 @@ function CharacterService.GetRaces()
 			descricao = race.descricao,
 			categoria = race.categoria,
 			fonte = race.fonte,
+			aumento_atributo = race.aumento_atributo,
+			caracteristicas = race.caracteristicas,
+			opcoes_caracteristica = race.opcoes_caracteristica,
 		})
 	end
 	return list
@@ -234,6 +257,11 @@ local function applyRaceBonusAllocations(character, req, allocations)
 	return true, nil
 end
 
+-- ================= Atributos: compra de pontos (point buy) =================
+-- Identico ao webapp (creator.js/buyStat): cada atributo comeca em 10,
+-- SYSTEM_DB.pointBuyCosts[valor] da o custo (pode ser negativo, ou seja,
+-- baixar o atributo devolve pontos), soma total nao pode passar de 20.
+-- Faixa permitida: 1 a 30 (igual ao webapp, sem clamp mais apertado).
 local POINT_BUY_MAX = 20
 local ATTR_KEYS = { "FOR", "DES", "CON", "INT", "SAB", "PRE" }
 
@@ -241,6 +269,11 @@ local function pointBuyCost(value)
 	return SystemDB.pointBuyCosts[value] or 0
 end
 
+-- ================= Limite de atributo (sem Hatsu) =================
+-- Regra do sistema (confirmada com o Lucas): sem bonus de Hatsu, nenhum
+-- atributo pode passar de 22 (modificador +6). Validado APOS o bonus racial
+-- ser aplicado, ja que ele pode empurrar o valor acima do que o point-buy
+-- sozinho permitiria.
 local ATTR_HARD_CAP = 22
 
 local function validateAttributeCap(character)
@@ -261,6 +294,8 @@ function CharacterService.GetPointBuyInfo()
 	}
 end
 
+-- Valida e retorna a tabela de atributos final (ou nil + erro).
+-- attributesBuild = { FOR=15, DES=10, ... } (todas as 6 chaves obrigatorias)
 local function validateAttributesBuild(attributesBuild)
 	if type(attributesBuild) ~= "table" then
 		return nil, "Atributos não enviados."
@@ -278,6 +313,86 @@ local function validateAttributesBuild(attributesBuild)
 	end
 	return attributesBuild, nil
 end
+
+-- ================= Atributos: Rolagem e Array Padrao =================
+-- Identico ao webapp (sheet.js): rollAllStats / applyStandardArray.
+-- Rolagem: 6x rola 4d6 (cada resultado 1 é re-rolado UMA vez), soma os
+-- 3 maiores dos 4, descarta o menor. Array Padrao: banco fixo.
+-- Em ambos os casos o jogador distribui os 6 valores livremente entre
+-- os atributos (nao é ordem fixa) -- por isso o servidor guarda o banco
+-- "pendente" na sessao e so aceita a distribuicao final se ela for
+-- EXATAMENTE uma permutacao do banco (nunca confia em valores enviados
+-- pelo cliente sem conferir contra o que foi realmente sorteado aqui).
+
+local STANDARD_ARRAY = { 15, 14, 13, 12, 10, 8 }
+
+local function rollAttributePool()
+	local pool = {}
+	for i = 1, 6 do
+		local dice = {}
+		for j = 1, 4 do
+			local d = math.random(1, 6)
+			if d == 1 then
+				d = math.random(1, 6) -- re-rola 1 uma unica vez
+			end
+			table.insert(dice, d)
+		end
+		table.sort(dice, function(a, b) return a > b end)
+		table.insert(pool, dice[1] + dice[2] + dice[3]) -- soma os 3 maiores, descarta o menor
+	end
+	table.sort(pool, function(a, b) return a > b end)
+	return pool
+end
+
+function CharacterService.RollAttributePool(player)
+	local session = getSession(player)
+	-- Trava anti-farm: so pode rolar UMA VEZ por tentativa de criacao de
+	-- personagem (pedido explicito do Lucas -- sem isso, o jogador
+	-- poderia clicar repetidamente ate sair um resultado bom). A trava
+	-- reseta quando um personagem e criado com sucesso (proxima
+	-- tentativa comeca livre de novo).
+	if session.attrPoolLocked then
+		return { locked = true, error = "Você já rolou os atributos para este personagem. Não é possível rolar de novo." }
+	end
+	local pool = rollAttributePool()
+	session.pendingAttrPool = pool
+	session.attrPoolLocked = true
+	return pool
+end
+
+function CharacterService.GetStandardArray(player)
+	local session = getSession(player)
+	session.pendingAttrPool = deepCopy(STANDARD_ARRAY)
+	return session.pendingAttrPool
+end
+
+-- Confere se attributesBuild (mapa atributo->valor) é EXATAMENTE uma
+-- permutacao de "pool" (mesmos 6 numeros, cada um usado uma vez).
+local function validatePoolAssignment(attributesBuild, pool)
+	if type(attributesBuild) ~= "table" then
+		return nil, "Atributos não enviados."
+	end
+	if type(pool) ~= "table" or #pool ~= 6 then
+		return nil, "Nenhuma rolagem ou array pendente. Role os atributos ou use o array padrão antes de confirmar."
+	end
+	local poolCount = {}
+	for _, v in ipairs(pool) do
+		poolCount[v] = (poolCount[v] or 0) + 1
+	end
+	for _, key in ipairs(ATTR_KEYS) do
+		local value = attributesBuild[key]
+		if type(value) ~= "number" then
+			return nil, "Valor inválido para " .. key .. "."
+		end
+		if not poolCount[value] or poolCount[value] <= 0 then
+			return nil, "Os valores enviados não batem com a rolagem/array atual. Role de novo."
+		end
+		poolCount[value] = poolCount[value] - 1
+	end
+	return attributesBuild, nil
+end
+
+-- ================= Antecedentes (SystemDB) =================
 
 local function findBackgroundByName(bgName)
 	if type(bgName) ~= "string" then
@@ -299,14 +414,30 @@ function CharacterService.GetBackgrounds()
 			descricao = bg.descricao,
 			proficiencias = bg.proficiencias,
 			caracteristicas = bg.caracteristicas,
+			equipamento = bg.equipamento,
 		})
 	end
 	return list
 end
 
+-- ================= Inclinações (SystemDB) =================
+-- Regra identica ao webapp (sheet.js): GENERAL_INC_BASIC_MAX_CUSTO = 3.
+-- freeCost = MAIOR custo entre as positivas selecionadas com custo <= 3
+-- (nao soma, so a maior; zero se nenhuma qualificar).
+-- paidCost = max(0, somaCustoPositivas - freeCost)
+-- balance = somaValorNegativas - paidCost; precisa ser >= 0 pra ser valido.
+-- somaValorNegativas tem teto de 10 pontos.
 local GENERAL_INC_BASIC_MAX_CUSTO = 3
 local NEGATIVE_MAX_TOTAL = 10
 
+-- ================= Restrição: só básicas na criação =================
+-- Divergência conhecida entre o Manual e o webapp atual (o webapp ainda
+-- não filtra isso, mas vai ser corrigido numa atualização futura dele).
+-- Confirmado com o Lucas: na CRIAÇÃO do personagem só as Inclinações
+-- Gerais Básicas ficam disponíveis (o resto — Ambidestria, Aleijado etc. —
+-- são desbloqueadas depois, via progressão de nível: "Inclinações de
+-- Combate/Gerais" nos níveis 2, 4, 7 e 11). Lista fixa, por segurança
+-- (não inferida por posição no array, que não bate 1:1 pros dois lados).
 local BASIC_POSITIVE_NAMES = {
 	["Aliado"] = true,
 	["Contatos"] = true,
@@ -363,6 +494,17 @@ function CharacterService.GetInclinations()
 	}
 end
 
+-- ================= Pericias / Treinamentos =================
+-- Identico ao webapp (creator.js, step 5 "Treinamentos"):
+-- - Pericias do antecedente (texto livre em background.proficiencias) sao
+--   detectadas por substring e adicionadas automaticamente, sem contar
+--   contra o limite manual.
+-- - Ate 5 pericias PRINCIPAIS (SystemDB.skills) manuais, alem das do
+--   antecedente.
+-- - "Outros Treinamentos" (SystemDB.otherSkills): limite de 4, ou 5 se o
+--   antecedente ja mencionar "Kit" ou "Ferramenta" no texto (hasBgKit).
+--   Quando hasBgKit, o item "Kits" fica travado (concedido automaticamente,
+--   nao pode ser escolhido manualmente de novo).
 local MAIN_SKILLS_MAX_MANUAL = 5
 
 local function getBgSkillsText(background)
@@ -399,6 +541,7 @@ function CharacterService.GetSkillsInfo(backgroundName)
 	}
 end
 
+-- Valida pericias escolhidas. Retorna (skillsFinais, otherSkillsFinais, erro)
 local function validateSkills(background, chosenSkills, chosenOtherSkills)
 	local bgText = getBgSkillsText(background)
 	local autoSkills = computeAutoSkills(bgText)
@@ -425,6 +568,7 @@ local function validateSkills(background, chosenSkills, chosenOtherSkills)
 		return nil, nil, "Você escolheu " .. #manualSkills .. " perícias manuais, o máximo é " .. MAIN_SKILLS_MAX_MANUAL .. " (perícias do antecedente não contam)."
 	end
 
+	-- combina auto + manual, sem duplicar
 	local skillsFinal = {}
 	local seen = {}
 	for _, s in ipairs(autoSkills) do
@@ -461,6 +605,9 @@ local function validateSkills(background, chosenSkills, chosenOtherSkills)
 	return skillsFinal, otherSkillsFinal, nil
 end
 
+-- Acha uma inclinacao (ou uma opcao dela) pelo "nome completo" enviado
+-- pelo cliente. Para itens com hasOptions, o nome completo e "Pai: Opcao"
+-- (igual ao webapp: `${inc.nome}: ${opt.label}`).
 local function findInclination(catalogList, fullName)
 	for _, inc in ipairs(catalogList) do
 		if inc.hasOptions then
@@ -476,6 +623,9 @@ local function findInclination(catalogList, fullName)
 	return nil
 end
 
+-- Valida a lista de inclinacoes escolhidas e retorna as listas finais
+-- (com custo/valor resolvidos do catalogo, nunca confiando em valores
+-- enviados pelo cliente) ou nil + erro.
 local function validateInclinations(positiveNames, negativeNames)
 	local positiveList = {}
 	local posCost = 0
@@ -541,6 +691,8 @@ local function getActiveCharacterFromSession(session)
 	return findCharacterById(session, session.activeCharacterId)
 end
 
+-- ================= Normalização (formato antigo → v0.3) =================
+
 local function normalizeCharacter(char)
 	if type(char) ~= "table" then
 		return char
@@ -588,6 +740,12 @@ local function normalizeCharacter(char)
 		char.Vitals.CA = oldVitals.CA or defaults.Vitals.CA
 		char.Vitals.Reacoes = oldVitals.Reacoes or oldVitals.Rea or defaults.Vitals.Reacoes
 		char.Vitals.Deslocamento = oldVitals.Deslocamento or oldVitals.Desl or defaults.Vitals.Deslocamento
+		char.Vitals.DeslocamentoPlanar = oldVitals.DeslocamentoPlanar or 0
+	end
+	if char.Race == "Vampiros" and not char.VampiroCasta then
+		-- Vampiro criado antes desse campo existir: entra na casta base.
+		char.VampiroCasta = "Vampiro"
+		char.Vitals.DeslocamentoPlanar = 3
 	end
 
 	local function ensureArray(name)
@@ -601,6 +759,17 @@ local function normalizeCharacter(char)
 	ensureArray("Inventory")
 	ensureArray("Conditions")
 	ensureArray("History")
+	ensureArray("Organizacoes")
+	ensureArray("VampiroSeresDrenados")
+	if type(char.VampiroAuraTotalDrenada) ~= "number" then
+		char.VampiroAuraTotalDrenada = 0
+	end
+	if type(char.Alignment) ~= "string" then
+		char.Alignment = "Neutro"
+	end
+	if type(char.Money) ~= "number" then
+		char.Money = defaults.Money or 0
+	end
 	if type(char.Inclinations) ~= "table" then
 		char.Inclinations = { Positive = {}, Negative = {} }
 	end
@@ -616,6 +785,7 @@ local function normalizeCharacter(char)
 		end
 	end
 
+	-- Nen: garante estrutura + migra formato antigo
 	if type(char.Nen) ~= "table" then
 		char.Nen = deepCopy(defaults.Nen)
 	end
@@ -627,6 +797,7 @@ local function normalizeCharacter(char)
 	end
 	local dominio = char.Nen.Dominio
 	if dominio.In ~= nil then
+		-- migração In → Inp (app usa inp para não conflitar com keyword)
 		if dominio.Inp == nil then
 			dominio.Inp = dominio.In
 			dominio.Inp_sup = dominio.In_sup or false
@@ -637,6 +808,7 @@ local function normalizeCharacter(char)
 		dominio.In_pn = nil
 	end
 
+	-- Personagens antigos sem categoria/genialidade: rola agora (M0.9 precisa)
 	if not char.Nen.Category then
 		local category, tier, roll = rollNenAffinity()
 		char.Nen.Category = category
@@ -657,6 +829,8 @@ local function normalizeCharacter(char)
 	return char
 end
 
+-- ================= Persistência =================
+
 function CharacterService.SavePlayer(player)
 	local session = sessions[player]
 	if not session then
@@ -667,6 +841,8 @@ function CharacterService.SavePlayer(player)
 		activeCharacterId = session.activeCharacterId,
 	})
 end
+
+-- ================= Carregamento (chamado pelo Bootstrap) =================
 
 function CharacterService.LoadPlayer(player)
 	local session = getSession(player)
@@ -700,6 +876,8 @@ function CharacterService.LoadPlayer(player)
 	end
 end
 
+-- ================= Consultas =================
+
 function CharacterService.GetActiveCharacter(player)
 	local session = getSession(player)
 	return getActiveCharacterFromSession(session)
@@ -719,6 +897,8 @@ function CharacterService.GetCharacters(player)
 	return list
 end
 
+-- ================= Ações =================
+
 function CharacterService.SetActiveCharacter(player, characterId)
 	if type(characterId) ~= "string" then
 		return false
@@ -731,23 +911,295 @@ function CharacterService.SetActiveCharacter(player, characterId)
 	return false
 end
 
+-- ================= Vitais na criação (formula confirmada no webapp: sheet.js) =================
+-- HP inicial = 15 + mod(CON) | CA = 10 + mod(CON) | Reações = 7 + mod(SAB)
+-- Aura e Sanidade sempre começam fixas em 100/100. Deslocamento padrao 9m
+-- (racas com deslocamento diferente, ex. Formiga Quimera com fqPreset,
+-- ainda nao aplicam esse ajuste aqui — pendencia conhecida).
 local function attrMod(value)
 	return math.floor(((value or 10) - 10) / 2)
 end
 
-local function initVitals(character)
+-- Deslocamento base por raca (identico ao webapp: a maioria das racas
+-- nao menciona deslocamento, entao usa o padrao 9m -- so estas 3 tem um
+-- valor diferente documentado explicitamente no texto da caracteristica
+-- "Tamanho Pequeno"/"Deslocamento" de cada uma. Golias tambem tem uma
+-- caracteristica "Deslocamento de 9m" mas isso ja bate com o padrao,
+-- entao nao precisa de entrada aqui. Formiga Quimera e Vampiros tem
+-- deslocamento variavel/condicional (por preset escolhido ou por
+-- evolucao de casta) -- pendencia documentada, nao coberta por este
+-- mapa simples.
+local RACE_DESLOCAMENTO = {
+	["Anões"] = 7.5,
+	["Halflings"] = 7.5,
+	["Gnomos"] = 7.5,
+}
+
+-- ================= Vampiros: Casta e Deslocamento Planar =================
+-- "Tamanho Médio. Deslocamento de 9m comum e 3m planar (aumenta em 3m
+-- para cada casta que sobe: Vampiro, Lorde Vampiro, Conde Vampiro,
+-- Imperador Vampiro)." -- todo Vampiro comeca na casta mais baixa
+-- (Vampiro) com 3m planar; sobe de casta depois da criacao (decisao do
+-- mestre/narrativa), nao e algo que o jogador escolhe ao criar.
+local VAMPIRO_CASTA_ORDEM = { "Vampiro", "Lorde Vampiro", "Conde Vampiro", "Imperador Vampiro" }
+local VAMPIRO_CASTA_PLANAR = { ["Vampiro"] = 3, ["Lorde Vampiro"] = 6, ["Conde Vampiro"] = 9, ["Imperador Vampiro"] = 12 }
+
+-- Requisitos REAIS de cada promocao (documento do Lucas, extraido do
+-- livro de Vampiros). Cada requisito checavel automaticamente vira
+-- uma funcao que le o estado do personagem; os que dependem de coisas
+-- narrativas/fora do alcance do sistema ficam documentados como tal
+-- e sao pulados na checagem automatica (o mestre decide via
+-- PromoteVampiroCasta mesmo assim, mas agora ve o que falta).
+--
+-- "Vampiro -> Lorde": sobreviver Exaustao Severa (3o nivel) [SEM
+-- rastreamento de exaustao no sistema ainda -- nao checavel],
+-- absorver aura de 5 seres diferentes [checavel via VampiroSeresDrenados],
+-- Ten e Ren maestria [checavel via Nen.Dominio].
+--
+-- "Lorde -> Conde": sobreviver ferimento quase-fatal 10%-5% PV depois
+-- de virar Lorde [checavel via VampiroSobreviveuFerimentoFatal, setado
+-- pelo mesmo gancho do CheckPVBaixo], drenar 300% de aura somada
+-- [checavel via VampiroAuraTotalDrenada], aprender Gyo e In [checavel
+-- via Nen.Dominio.Gyo e Nen.Dominio.Inp].
+--
+-- "Conde -> Imperador": todos os principios de Nen [checavel],
+-- derrotar 2 Condes Vampiros [SEM PvP/inimigos nomeados -- nao
+-- checavel automaticamente, fica pra confirmacao manual do mestre
+-- via Conquista], "ser aceito pelos demais condes e vampiros"
+-- [mapeado pra reputacao maxima na organizacao "Vampiros" -- ver
+-- OrganizationsDB.lua].
+local function checarRequisitosPromocao(character, proxima)
+	local faltando = {}
+	local dominio = (character.Nen and character.Nen.Dominio) or {}
+
+	if proxima == "Lorde Vampiro" then
+		if (character.VampiroSeresDrenados and #character.VampiroSeresDrenados or 0) < 5 then
+			table.insert(faltando, "Absorver aura de 5 seres diferentes (tem " .. (character.VampiroSeresDrenados and #character.VampiroSeresDrenados or 0) .. ")")
+		end
+		if (dominio.Ten or 0) < 3 or (dominio.Ren or 0) < 3 then
+			table.insert(faltando, "Ten e Ren em maestria (grau 3)")
+		end
+		table.insert(faltando, "⚠️ Sobreviver a Exaustão Severa (3º nível) -- sem rastreamento de exaustão no sistema, confirme manualmente")
+	elseif proxima == "Conde Vampiro" then
+		if not character.VampiroSobreviveuFerimentoFatal then
+			table.insert(faltando, "Sobreviver a um ferimento quase-fatal (5%-10% de PV) como Lorde Vampiro")
+		end
+		if (character.VampiroAuraTotalDrenada or 0) < 300 then
+			table.insert(faltando, "Drenar 300% de aura somada (tem " .. math.floor(character.VampiroAuraTotalDrenada or 0) .. "%)")
+		end
+		if not dominio.Gyo or not dominio.Inp then
+			table.insert(faltando, "Aprender Gyo e In")
+		end
+	elseif proxima == "Imperador Vampiro" then
+		local todos = { "Ten", "Ren", "Zetsu", "En", "Inp", "Gyo", "Shu", "Ken", "Ko", "Ryu" }
+		for _, p in ipairs(todos) do
+			if not dominio[p] or dominio[p] <= 0 then
+				table.insert(faltando, "Aprender todos os princípios de Nen (falta " .. p .. ")")
+				break
+			end
+		end
+		table.insert(faltando, "⚠️ Derrotar 2 outros Condes Vampiros -- sem PvP, confirme manualmente (Conquista)")
+		local orgVampiros = false
+		for _, m in ipairs(character.Organizacoes or {}) do
+			if m.orgId == "vampiros" and m.nivel >= 5 then
+				orgVampiros = true
+			end
+		end
+		if not orgVampiros then
+			table.insert(faltando, "Ser aceito pelos demais Condes/Vampiros (nível 5 na organização Vampiros)")
+		end
+	end
+
+	return faltando
+end
+
+-- Promove o Vampiro pra proxima casta (uso do mestre/narrativa, fora do
+-- fluxo de criacao). Retorna { success, message/error, faltando }.
+-- force=true ignora a checagem de requisitos (override do mestre).
+function CharacterService.PromoteVampiroCasta(character, force)
+	if not character or character.Race ~= "Vampiros" then
+		return { success = false, error = "Só personagens da raça Vampiros têm casta." }
+	end
+	local atual = character.VampiroCasta or "Vampiro"
+	local indiceAtual = table.find(VAMPIRO_CASTA_ORDEM, atual) or 1
+	if indiceAtual >= #VAMPIRO_CASTA_ORDEM then
+		return { success = false, error = "Já está na casta máxima (Imperador Vampiro)." }
+	end
+	local proxima = VAMPIRO_CASTA_ORDEM[indiceAtual + 1]
+
+	if not force then
+		local faltando = checarRequisitosPromocao(character, proxima)
+		if #faltando > 0 then
+			return { success = false, error = "Requisitos pendentes para " .. proxima .. ":", faltando = faltando }
+		end
+	end
+
+	character.VampiroCasta = proxima
+	character.Vitals.DeslocamentoPlanar = VAMPIRO_CASTA_PLANAR[proxima]
+	if proxima == "Conde Vampiro" then
+		character.VampiroSobreviveuFerimentoFatal = false -- reseta pro proximo requisito (Lorde->Conde ja consumido)
+	end
+	return { success = true, message = "Promovido para " .. proxima .. " (+" .. VAMPIRO_CASTA_PLANAR[proxima] .. "m de deslocamento planar)." }
+end
+
+-- Corpo de Gigante (inclinacao positiva, ver SystemDB): "+5 HP inicial
+-- e +3 por nivel". O +3 por nivel ja esta conectado no LevelUpService
+-- (giantBonus no dado de vida). O +5 inicial e aplicado aqui.
+local function hasCorpoDeGigante(character)
+	for _, inc in ipairs((character.Inclinations and character.Inclinations.Positive) or {}) do
+		if inc.Nome == "Corpo de Gigante" then
+			return true
+		end
+	end
+	return false
+end
+
+-- ================= Perda permanente de PV/Sanidade =================
+-- Reutilizavel por qualquer fonte (restricoes de Hatsu como "Dano
+-- Permanente"/"Dano Permanente Constante", itens, maldicoes futuras
+-- etc.). Reduz o MAXIMO pra sempre (nao so o atual), e ajusta o atual
+-- pra baixo se ele tiver ficado acima do novo maximo.
+function CharacterService.ApplyPermanentVitalLoss(character, tipo, quantidade)
+	if quantidade <= 0 then
+		return
+	end
+	if tipo == "PV" then
+		character.Vitals.HP.Max = math.max(1, character.Vitals.HP.Max - quantidade)
+		character.Vitals.HP.Current = math.min(character.Vitals.HP.Current, character.Vitals.HP.Max)
+	elseif tipo == "Sanidade" then
+		character.Vitals.Sanidade.Max = math.max(0, character.Vitals.Sanidade.Max - quantidade)
+		character.Vitals.Sanidade.Current = math.min(character.Vitals.Sanidade.Current, character.Vitals.Sanidade.Max)
+	end
+end
+
+-- Aura Gigantesca (inclinacao positiva, ver SystemDB): "+30% de Aura
+-- maxima" -- a OUTRA forma (alem da escolha de evolucao por nivel) de
+-- a Aura maxima do personagem sair de 100%. IMPORTANTE: "Aura
+-- Gigantesca" NAO esta na lista de inclinacoes basicas (so liberam na
+-- criacao "Aliado", "Corpo de Gigante" etc, ver BASIC_POSITIVE_NAMES) --
+-- entao essa funcao nunca dispara de verdade NA CRIACAO hoje. Fica
+-- pronta pro futuro: quando existir um fluxo de "adicionar inclinacao
+-- depois via P.I" (Pontos de Inclinacao do level-up), esse fluxo vai
+-- precisar CHAMAR essa mesma logica de novo (ou recalcular a Aura Max
+-- do zero) pra aplicar o bonus -- initVitals so roda uma vez, na
+-- criacao, entao ganhar essa inclinacao DEPOIS nao aplica o +30%
+-- sozinho ainda.
+local function hasAuraGigantesca(character)
+	for _, inc in ipairs((character.Inclinations and character.Inclinations.Positive) or {}) do
+		if inc.Nome == "Aura Gigantesca" then
+			return true
+		end
+	end
+	return false
+end
+
+local function initVitals(character, race)
 	local modCon = attrMod(character.Attributes.CON.value)
 	local modSab = attrMod(character.Attributes.SAB.value)
 	local hpInicial = 15 + modCon
+	if hasCorpoDeGigante(character) then
+		hpInicial = hpInicial + 5
+	end
 	character.Vitals.HP = { Current = hpInicial, Max = hpInicial }
-	character.Vitals.Aura = { Current = 100, Max = 100 }
+	local auraInicial = 100
+	if hasAuraGigantesca(character) then
+		auraInicial = auraInicial + 30
+	end
+	character.Vitals.Aura = { Current = auraInicial, Max = auraInicial }
 	character.Vitals.Sanidade = { Current = 100, Max = 100 }
 	character.Vitals.CA = 10 + modCon
 	character.Vitals.Reacoes = 7 + modSab
-	character.Vitals.Deslocamento = 9
+	character.Vitals.Deslocamento = (race and RACE_DESLOCAMENTO[race.nome]) or 9
+	if race and race.nome == "Vampiros" then
+		character.VampiroCasta = "Vampiro"
+		character.Vitals.DeslocamentoPlanar = VAMPIRO_CASTA_PLANAR["Vampiro"]
+	else
+		character.Vitals.DeslocamentoPlanar = 0
+	end
 end
 
-function CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations)
+-- ================= Formiga Quimera (regra especial, sem Antecedente) =================
+-- Identico ao webapp (creator.js): a raca "Formiga Quimera" nao segue o
+-- fluxo normal de aumento_atributo. Em vez disso: escolhe uma "Origem
+-- da Fagogenese" (visual predominante, de SystemDB.racas[].fagogenese_options),
+-- um Tamanho (Miudo/Pequeno/Medio, cada um com efeito de atributo
+-- diferente) e ate 3 Caracteristicas da Especie (de
+-- SystemDB.racas[].caracteristicas, algumas com sub-opcao obrigatoria
+-- quando tem campo "opcoes"). Referencias prontas (fqPresets) e a
+-- escolha extra de Voo/Escalada pra Insetos ficam de fora por ora
+-- (sao so cosmeticas/preenchimento automatico no webapp, nao travam
+-- nada -- pendencia de baixa prioridade).
+local FQ_TAMANHOS = { ["Miúdo"] = true, ["Pequeno"] = true, ["Médio"] = true }
+
+local function applyFormigaQuimera(character, race, fqData)
+	if not fqData then
+		return true, nil
+	end
+	local origem = fqData.fagogenese
+	local opcoesOrigem = race.fagogenese_options or {}
+	local origemValida = false
+	for _, o in ipairs(opcoesOrigem) do
+		if o == origem then origemValida = true break end
+	end
+	if not origemValida then
+		return false, "Origem da Fagogênese inválida. Opções: " .. table.concat(opcoesOrigem, ", ")
+	end
+	character.Fagogenese = origem
+
+	local tamanho = fqData.tamanho or "Médio"
+	if not FQ_TAMANHOS[tamanho] then
+		return false, "Tamanho inválido (use Miúdo, Pequeno ou Médio)."
+	end
+	character.FqTamanho = tamanho
+	if tamanho == "Miúdo" then
+		character.Attributes.DES.value = character.Attributes.DES.value + 2
+		character.Attributes.FOR.value = character.Attributes.FOR.value - 1
+		character.Attributes.CON.value = character.Attributes.CON.value - 1
+	elseif tamanho == "Pequeno" then
+		character.Attributes.DES.value = character.Attributes.DES.value + 1
+		local penalidade = fqData.pequenoPenalidade or "FOR"
+		if penalidade ~= "FOR" and penalidade ~= "CON" then
+			return false, "Penalidade de Tamanho Pequeno precisa ser FOR ou CON."
+		end
+		character.Attributes[penalidade].value = character.Attributes[penalidade].value - 1
+		character.FqPequenoPenalidade = penalidade
+	end
+
+	local tracosDisponiveis = {}
+	for _, c in ipairs(race.caracteristicas or {}) do
+		tracosDisponiveis[c.nome] = c
+	end
+	local tracosEscolhidos = fqData.traits or {}
+	if #tracosEscolhidos > 3 then
+		return false, "Escolha no máximo 3 Características da Espécie."
+	end
+	local tracosFinal = {}
+	local detalhesFinal = {}
+	for _, nomeTraco in ipairs(tracosEscolhidos) do
+		local def = tracosDisponiveis[nomeTraco]
+		if not def then
+			return false, "Característica de espécie desconhecida: " .. tostring(nomeTraco)
+		end
+		table.insert(tracosFinal, nomeTraco)
+		if def.opcoes and #def.opcoes > 0 then
+			local detalhe = (fqData.traitDetails or {})[nomeTraco]
+			local detalheValido = false
+			for _, op in ipairs(def.opcoes) do
+				if op == detalhe then detalheValido = true break end
+			end
+			if not detalheValido then
+				return false, "Escolha uma opção válida para \"" .. nomeTraco .. "\": " .. table.concat(def.opcoes, ", ")
+			end
+			detalhesFinal[nomeTraco] = detalhe
+		end
+	end
+	character.RaceTraits = tracosFinal
+	character.TraitDetails = detalhesFinal
+
+	return true, nil
+end
+
+function CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida)
 	local session = getSession(player)
 
 	local name = sanitizeName(rawName)
@@ -771,7 +1223,13 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 
 	local attrs = attributesBuild
 	if attrs then
-		local validated, attrErr = validateAttributesBuild(attrs)
+		local validated, attrErr
+		if attrMethod == "rolagem" or attrMethod == "array" then
+			local session2 = getSession(player)
+			validated, attrErr = validatePoolAssignment(attrs, session2.pendingAttrPool)
+		else
+			validated, attrErr = validateAttributesBuild(attrs)
+		end
 		if not validated then
 			return { success = false, error = attrErr }
 		end
@@ -823,6 +1281,7 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 	character.Name = name
 	character.Race = race and race.nome or nil
 
+	-- Point buy (ou padrao 10 em tudo, se nao enviado)
 	if attrs then
 		for _, key in ipairs(ATTR_KEYS) do
 			character.Attributes[key].value = attrs[key]
@@ -830,6 +1289,34 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 	end
 
 	applyRaceBonus(character, race)
+
+	-- Caracteristica de raca ESCOLHIDA (ex.: Anao precisa escolher 1
+	-- entre Resiliencia Ana / Estabilidade de Aura / Instinto de Forja).
+	-- So exigido se a raca de fato tiver essa lista de opcoes.
+	if race and race.opcoes_caracteristica and #race.opcoes_caracteristica > 0 then
+		local opcaoValida = nil
+		for _, op in ipairs(race.opcoes_caracteristica) do
+			if op.nome == raceCaracteristicaEscolhida then
+				opcaoValida = op
+				break
+			end
+		end
+		if not opcaoValida then
+			local nomes = {}
+			for _, op in ipairs(race.opcoes_caracteristica) do
+				table.insert(nomes, op.nome)
+			end
+			return { success = false, error = "Escolha uma característica de raça: " .. table.concat(nomes, ", ") }
+		end
+		character.RaceCaracteristicaEscolhida = opcaoValida.nome
+	end
+
+	if race and race.nome == "Formiga Quimera" then
+		local fqOk, fqErr = applyFormigaQuimera(character, race, fqData)
+		if not fqOk then
+			return { success = false, error = fqErr }
+		end
+	end
 
 	local bonusReq = getRaceBonusRequirement(race)
 	if bonusReq and raceBonusAllocations then
@@ -846,9 +1333,97 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 	end
 
 	if background then
+		-- Caracteristica do antecedente (ex.: Guarda Costas escolhe entre
+		-- "Artista Marcial" ou "Horario de Trabalho") -- SEMPRE uma
+		-- escolha (diferente de raca, que pode ter "recebe todas" +
+		-- "escolhe 1" separados). Obrigatoria se o antecedente listar
+		-- caracteristicas.
+		if background.caracteristicas and #background.caracteristicas > 0 then
+			local featValida = nil
+			for _, c in ipairs(background.caracteristicas) do
+				if c.nome == backgroundFeature then
+					featValida = c
+					break
+				end
+			end
+			if not featValida then
+				local nomes = {}
+				for _, c in ipairs(background.caracteristicas) do
+					table.insert(nomes, c.nome)
+				end
+				return { success = false, error = "Escolha uma característica do antecedente: " .. table.concat(nomes, ", ") }
+			end
+			backgroundFeature = featValida.nome
+		end
+
 		character.Background = background.nome
 		character.BackgroundFeature = backgroundFeature
 		character.BackgroundProficiencias = background.proficiencias
+
+		-- Equipamento inicial do antecedente: so itens FIXOS (nome exato
+		-- que bate com o catalogo) entram automaticamente. Entradas tipo
+		-- "Qualquer arma simples" ou "X ou Y" (escolha) NAO sao auto-
+		-- resolvidas ainda -- ficam pendentes de uma tela de escolha
+		-- futura (o webapp tem "classifyEquipSlot" pra isso, ainda nao
+		-- portado aqui).
+		character.Inventory = character.Inventory or {}
+		for _, eqNome in ipairs(background.equipamento or {}) do
+			if ItemsDB.FindItem(eqNome) then
+				local jaTem = nil
+				for _, invItem in ipairs(character.Inventory) do
+					if invItem.Name == eqNome then jaTem = invItem break end
+				end
+				if jaTem then
+					jaTem.Qty = jaTem.Qty + 1
+				else
+					table.insert(character.Inventory, { Name = eqNome, Qty = 1 })
+				end
+			end
+		end
+	end
+
+	-- Dinheiro inicial. Regra padrao: 1d10 x 100. Excecoes (cada uma
+	-- concede dinheiro por um caminho proprio, substituindo a regra
+	-- padrao em vez de somar a ela):
+	-- - Negociante: ja tem "orcamento de 2.000 $" embutido no proprio
+	--   equipamento (nao rola nada).
+	-- - Aristocrata + caracteristica "Mauricinho / Patricinha": rola a
+	--   Tabela de Playboyzisse (1d4 pra classe social, depois a faixa
+	--   de valor semanal daquela classe).
+	-- - Criminoso + caracteristica "Traficante": maco fixo de 1.500 $.
+	do
+		local jaConcedeuDinheiro = false
+
+		if background and background.nome == "Negociante" then
+			for _, eqNome in ipairs(background.equipamento or {}) do
+				if eqNome:find("$", 1, true) then
+					jaConcedeuDinheiro = true
+					break
+				end
+			end
+		end
+
+		if not jaConcedeuDinheiro and background and background.nome == "Aristocrata" and backgroundFeature == "Mauricinho / Patricinha" then
+			local classeSocial = math.random(1, 4)
+			local faixas = {
+				{ 50, 150 },   -- 1: Classe Media Alta
+				{ 200, 500 },  -- 2: Classe Alta
+				{ 600, 1500 }, -- 3: Rico
+				{ 2000, 5000 },-- 4: Jogador de aviaozinho de nota de 100 $
+			}
+			local faixa = faixas[classeSocial]
+			character.Money = math.random(faixa[1], faixa[2])
+			jaConcedeuDinheiro = true
+		end
+
+		if not jaConcedeuDinheiro and background and background.nome == "Criminoso" and backgroundFeature == "Traficante" then
+			character.Money = 1500
+			jaConcedeuDinheiro = true
+		end
+
+		if not jaConcedeuDinheiro then
+			character.Money = math.random(1, 10) * 100
+		end
 	end
 
 	character.Inclinations = { Positive = positiveList, Negative = negativeList }
@@ -861,25 +1436,30 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 	character.CreatedAt = now
 	character.UpdatedAt = now
 
+	-- Afinidade de Nen (1d100) — server-authoritative
 	local category, tier, roll = rollNenAffinity()
 	character.Class = category
 	character.Nen.Category = category
 	character.Nen.Affinity.Roll = roll
 	character.Nen.Affinity.Tier = tier
 
+	-- Genialidade (2d20) — pronta para o M1.0 (Hatsu)
 	local geniusTier, geniusRoll = rollNenGenius()
 	character.Nen.Genius = { Roll = geniusRoll, Tier = geniusTier }
 
-	initVitals(character)
+	initVitals(character, race)
 
 	table.insert(session.characters, character)
 	session.activeCharacterId = character.Id
+	session.attrPoolLocked = false -- proxima criacao comeca livre pra rolar de novo
 
 	return {
 		success = true,
 		character = character,
 	}
 end
+
+-- ================= Bio (texto livre) =================
 
 local BIO_FIELDS = {
 	Personality = true, Goals = true, Likes = true, Hates = true,
@@ -1032,9 +1612,15 @@ function CharacterService.GetConditionModifiers(character)
 	local deslocFactor = 1
 	local deslocZero = false
 	local auraCostExtra = 0
+	local hpMaxFactor = 1
+	local desvantagemHabilidade = false
+	local desvantagemAtaque = false
+	local vantagemInimigoContra = false
 	local ativos = {}
+	local graus = {}
 	for _, entry in ipairs(character.Conditions or {}) do
 		ativos[entry.id] = true
+		graus[entry.id] = entry.grau
 	end
 	if ativos["inconsciente"] or ativos["paralisado"] then
 		caPenalty = caPenalty - 10
@@ -1048,7 +1634,39 @@ function CharacterService.GetConditionModifiers(character)
 	if ativos["condenado"] then
 		auraCostExtra = auraCostExtra + 5
 	end
-	return { caPenalty = caPenalty, deslocFactor = deslocFactor, deslocZero = deslocZero, auraCostExtra = auraCostExtra }
+
+	-- Exaustao (condicao variavel, ver ConditionsDB): efeitos
+	-- cumulativos por nivel (2 e 3 incluem os anteriores).
+	local exaustaoGrau = ativos["exausto"] and graus["exausto"]
+	if exaustaoGrau == "1" or exaustaoGrau == "2" or exaustaoGrau == "3" then
+		desvantagemHabilidade = true
+	end
+	if exaustaoGrau == "2" or exaustaoGrau == "3" then
+		desvantagemAtaque = true
+		vantagemInimigoContra = true
+		deslocFactor = deslocFactor * 0.5
+	end
+	if exaustaoGrau == "3" then
+		hpMaxFactor = hpMaxFactor * 0.5
+		deslocZero = true
+	end
+
+	return {
+		caPenalty = caPenalty,
+		deslocFactor = deslocFactor,
+		deslocZero = deslocZero,
+		auraCostExtra = auraCostExtra,
+		hpMaxFactor = hpMaxFactor,
+		desvantagemHabilidade = desvantagemHabilidade,
+		desvantagemAtaque = desvantagemAtaque,
+		vantagemInimigoContra = vantagemInimigoContra,
+	}
+end
+
+function CharacterService.GetEffectiveMaxHP(character)
+	local mods = CharacterService.GetConditionModifiers(character)
+	local base = (character.Vitals and character.Vitals.HP and character.Vitals.HP.Max) or 0
+	return math.floor(base * mods.hpMaxFactor)
 end
 
 function CharacterService.GetEffectiveCA(character)
@@ -1063,6 +1681,76 @@ function CharacterService.GetEffectiveDeslocamento(character)
 		return 0
 	end
 	return base * mods.deslocFactor
+
+end
+
+-- ================= Loja: comprar/vender itens (ver ItemsDB.lua) =================
+-- Regra confirmada no webapp (sheet.js): comprar desconta o custo cheio
+-- de character.Money; vender devolve METADE do custo original,
+-- arredondado pra baixo (math.floor), e decrementa 1 unidade (remove a
+-- entrada se Qty chegar a 0). No Roblox isso vai coexistir com NPCs de
+-- loja no futuro, mas a logica de base (moeda, inventario, catalogo)
+-- fica pronta aqui independente disso.
+
+function CharacterService.BuyItem(character, itemNome, quantidade)
+	quantidade = quantidade or 1
+	if type(quantidade) ~= "number" or quantidade < 1 or quantidade ~= math.floor(quantidade) then
+		return { success = false, error = "Quantidade inválida." }
+	end
+	local item = ItemsDB.FindItem(itemNome)
+	if not item then
+		return { success = false, error = "Item desconhecido: " .. tostring(itemNome) }
+	end
+	local custoTotal = item.custo * quantidade
+	character.Money = character.Money or 0
+	if character.Money < custoTotal then
+		return { success = false, error = "Dinheiro insuficiente. Custo: " .. custoTotal .. ", disponível: " .. character.Money }
+	end
+	character.Money = character.Money - custoTotal
+	character.Inventory = character.Inventory or {}
+	local existente = nil
+	for _, invItem in ipairs(character.Inventory) do
+		if invItem.Name == itemNome then
+			existente = invItem
+			break
+		end
+	end
+	if existente then
+		existente.Qty = existente.Qty + quantidade
+	else
+		table.insert(character.Inventory, { Name = itemNome, Qty = quantidade })
+	end
+	return { success = true, message = "Comprou " .. quantidade .. "x " .. itemNome .. " por " .. custoTotal .. ". Dinheiro restante: " .. character.Money }
+end
+
+function CharacterService.SellItem(character, itemNome, quantidade)
+	quantidade = quantidade or 1
+	if type(quantidade) ~= "number" or quantidade < 1 or quantidade ~= math.floor(quantidade) then
+		return { success = false, error = "Quantidade inválida." }
+	end
+	character.Inventory = character.Inventory or {}
+	local index, entry = nil, nil
+	for i, invItem in ipairs(character.Inventory) do
+		if invItem.Name == itemNome then
+			index, entry = i, invItem
+			break
+		end
+	end
+	if not entry then
+		return { success = false, error = "Você não tem \"" .. tostring(itemNome) .. "\" no inventário." }
+	end
+	if entry.Qty < quantidade then
+		return { success = false, error = "Você só tem " .. entry.Qty .. "x, não pode vender " .. quantidade .. "x." }
+	end
+	local item = ItemsDB.FindItem(itemNome)
+	local valorUnitario = item and math.floor(item.custo / 2) or 0
+	local valorTotal = valorUnitario * quantidade
+	character.Money = (character.Money or 0) + valorTotal
+	entry.Qty = entry.Qty - quantidade
+	if entry.Qty <= 0 then
+		table.remove(character.Inventory, index)
+	end
+	return { success = true, message = "Vendeu " .. quantidade .. "x " .. itemNome .. " por " .. valorTotal .. ". Dinheiro: " .. character.Money }
 end
 
 function CharacterService.DeleteCharacter(player, characterId)
@@ -1088,6 +1776,8 @@ function CharacterService.DeleteCharacter(player, characterId)
 	end
 	return { success = true, message = "Personagem \"" .. tostring(deletedName) .. "\" excluido." }
 end
+
+-- ================= Sair do jogo =================
 
 Players.PlayerRemoving:Connect(function(player)
 	local session = sessions[player]

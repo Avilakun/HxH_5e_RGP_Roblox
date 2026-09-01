@@ -14,6 +14,10 @@ local ActivateHatsu = HxH5e:WaitForChild("ActivateHatsu")
 local ActivatePrinciple = HxH5e:WaitForChild("ActivatePrinciple")
 local BasicAttack = HxH5e:WaitForChild("BasicAttack")
 local BuffTick = HxH5e:WaitForChild("BuffTick")
+local AchievementUnlocked = HxH5e:WaitForChild("AchievementUnlocked")
+local AttemptReaction = HxH5e:WaitForChild("AttemptReaction")
+local EnemyTelegraph = HxH5e:WaitForChild("EnemyTelegraph")
+local EnemyAttackResult = HxH5e:WaitForChild("EnemyAttackResult")
 
 local playerGui = player:WaitForChild("PlayerGui")
 local guiAntigo = playerGui:FindFirstChild("HxH5eActionBar")
@@ -214,20 +218,64 @@ end
 
 -- ================= Barra de ações =================
 
+-- Largura recalculada pra caber os 7 botoes sem sobrepor (o Lucas
+-- reportou que Esquivar ficava escondido -- o frame antigo tinha so
+-- 460px fixos, mas os botoes juntos precisam de ~700px). Cada botao
+-- agora mostra a tecla de atalho no proprio texto, pra resolver
+-- "nao sei qual tecla ativa" tambem.
+local ACTION_BAR_WIDTH = 706
 local actionsFrame = makeFrame(screenGui, "ActionsFrame",
-	UDim2.new(0, 460, 0, 64), UDim2.new(0.5, -230, 1, -84), Color3.fromRGB(0, 0, 0))
+	UDim2.new(0, ACTION_BAR_WIDTH, 0, 64), UDim2.new(0.5, -ACTION_BAR_WIDTH / 2, 1, -84), Color3.fromRGB(0, 0, 0))
 actionsFrame.BackgroundTransparency = 0.6
 
-local atacarBtn = makeButton(actionsFrame, "Atacar", "ATACAR",
-	UDim2.new(0, 10, 0, 10), UDim2.new(0, 110, 0, 44), 13)
-local renBtn = makeButton(actionsFrame, "Ren", "REN",
-	UDim2.new(0, 128, 0, 10), UDim2.new(0, 74, 0, 44), 13)
-local tenBtn = makeButton(actionsFrame, "Ten", "TEN",
-	UDim2.new(0, 210, 0, 10), UDim2.new(0, 74, 0, 44), 13)
-local zetsuBtn = makeButton(actionsFrame, "Zetsu", "ZETSU",
-	UDim2.new(0, 292, 0, 10), UDim2.new(0, 74, 0, 44), 13)
-local hatsuBtn = makeButton(actionsFrame, "Hatsu", "HATSU",
-	UDim2.new(0, 374, 0, 10), UDim2.new(0, 76, 0, 44), 13)
+local atacarBtn = makeButton(actionsFrame, "Atacar", "ATACAR [F]",
+	UDim2.new(0, 10, 0, 10), UDim2.new(0, 96, 0, 44), 12)
+local renBtn = makeButton(actionsFrame, "Ren", "REN [R]",
+	UDim2.new(0, 114, 0, 10), UDim2.new(0, 74, 0, 44), 12)
+local tenBtn = makeButton(actionsFrame, "Ten", "TEN [T]",
+	UDim2.new(0, 196, 0, 10), UDim2.new(0, 74, 0, 44), 12)
+local zetsuBtn = makeButton(actionsFrame, "Zetsu", "ZETSU [G]",
+	UDim2.new(0, 278, 0, 10), UDim2.new(0, 82, 0, 44), 12)
+local hatsuBtn = makeButton(actionsFrame, "Hatsu", "HATSU [H]",
+	UDim2.new(0, 368, 0, 10), UDim2.new(0, 88, 0, 44), 12)
+local blockBtn = makeButton(actionsFrame, "Block", "🛡 BLOQUEAR [Q]",
+	UDim2.new(0, 464, 0, 10), UDim2.new(0, 116, 0, 44), 12)
+blockBtn.BackgroundColor3 = Color3.fromRGB(50, 55, 75)
+local dodgeBtn = makeButton(actionsFrame, "Dodge", "💨 ESQUIVAR [E]",
+	UDim2.new(0, 588, 0, 10), UDim2.new(0, 110, 0, 44), 12)
+dodgeBtn.BackgroundColor3 = Color3.fromRGB(50, 65, 55)
+
+-- ================= Aviso de telegraph (reacao) =================
+local reactionWarning = makeFrame(screenGui, "ReactionWarning",
+	UDim2.new(0, 320, 0, 50), UDim2.new(0.5, -160, 0, 60), Color3.fromRGB(40, 15, 15))
+reactionWarning.Visible = false
+local reactionWarningLabel = makeLabel(reactionWarning, "Label", "⚠ ATAQUE INIMIGO! Reaja agora!",
+	UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0), 14)
+reactionWarningLabel.TextColor3 = Color3.fromRGB(255, 200, 200)
+
+local function doBlock()
+	local result = AttemptReaction:InvokeServer("block")
+	showMsg(tostring(result.message or result.error))
+end
+blockBtn.Activated:Connect(doBlock)
+
+local function doDodge()
+	local result = AttemptReaction:InvokeServer("dodge")
+	showMsg(tostring(result.message or result.error))
+end
+dodgeBtn.Activated:Connect(doDodge)
+
+EnemyTelegraph.OnClientEvent:Connect(function(duration)
+	reactionWarning.Visible = true
+	task.delay(duration or 1.8, function()
+		reactionWarning.Visible = false
+	end)
+end)
+
+EnemyAttackResult.OnClientEvent:Connect(function(data)
+	reactionWarning.Visible = false
+	showMsg(tostring(data.message))
+end)
 
 -- ================= Menu de Hatsus =================
 
@@ -294,7 +342,9 @@ end)
 
 -- ================= Ações =================
 
-atacarBtn.Activated:Connect(function()
+-- Extraida pra funcao nomeada pra poder ser chamada tanto pelo
+-- clique quanto pela tecla de atalho [F].
+local function doAttack()
 	local result = BasicAttack:InvokeServer()
 	if result then
 		if result.success then
@@ -327,7 +377,8 @@ atacarBtn.Activated:Connect(function()
 		end
 	end
 	refreshBars()
-end)
+end
+atacarBtn.Activated:Connect(doAttack)
 
 local function usePrinciple(nome)
 	local result = ActivatePrinciple:InvokeServer(nome)
@@ -355,7 +406,7 @@ end)
 
 -- ================= HATSU (menu + ativação) =================
 
-hatsuBtn.Activated:Connect(function()
+local function toggleHatsuMenu()
 	if hatsuMenu.Visible then
 		hatsuMenu.Visible = false
 		return
@@ -406,6 +457,102 @@ hatsuBtn.Activated:Connect(function()
 		y = y + 32
 	end
 	hatsuMenu.Visible = true
-end)
+end
+hatsuBtn.Activated:Connect(toggleHatsuMenu)
 
 refreshBars()
+
+-- ================= Badge de Conquista Desbloqueada =================
+-- Aparece no topo-centro da tela por alguns segundos. Fila simples:
+-- se varias conquistas chegarem juntas, mostra uma de cada vez.
+
+local achievementBadge = makeFrame(screenGui, "AchievementBadge",
+	UDim2.new(0, 360, 0, 74), UDim2.new(0.5, 0, 0, -100), Color3.fromRGB(30, 24, 10))
+achievementBadge.AnchorPoint = Vector2.new(0.5, 0)
+achievementBadge.BorderSizePixel = 2
+achievementBadge.BorderColor3 = Color3.fromRGB(255, 200, 0)
+achievementBadge.Visible = false
+achievementBadge.ZIndex = 50
+
+local achievementHeader = makeLabel(achievementBadge, "Header", "🏆 CONQUISTA DESBLOQUEADA",
+	UDim2.new(0, 12, 0, 6), UDim2.new(1, -24, 0, 18), 11)
+achievementHeader.Font = Enum.Font.GothamBold
+achievementHeader.TextColor3 = Color3.fromRGB(255, 200, 0)
+achievementHeader.ZIndex = 51
+
+local achievementName = makeLabel(achievementBadge, "Name", "",
+	UDim2.new(0, 12, 0, 24), UDim2.new(1, -24, 0, 22), 16)
+achievementName.Font = Enum.Font.GothamBold
+achievementName.ZIndex = 51
+
+local achievementDesc = makeLabel(achievementBadge, "Desc", "",
+	UDim2.new(0, 12, 0, 48), UDim2.new(1, -24, 0, 22), 11)
+achievementDesc.TextColor3 = Color3.fromRGB(200, 200, 210)
+achievementDesc.TextWrapped = true
+achievementDesc.ZIndex = 51
+
+local achievementQueue = {}
+local achievementShowing = false
+
+local function processAchievementQueue()
+	if achievementShowing or #achievementQueue == 0 then
+		return
+	end
+	achievementShowing = true
+	local ach = table.remove(achievementQueue, 1)
+	achievementName.Text = tostring(ach.nome or "?")
+	achievementDesc.Text = tostring(ach.descricao or "")
+	achievementBadge.Position = UDim2.new(0.5, 0, 0, -100)
+	achievementBadge.Visible = true
+
+	local tweenIn = game:GetService("TweenService"):Create(
+		achievementBadge, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{ Position = UDim2.new(0.5, 0, 0, 16) })
+	tweenIn:Play()
+
+	task.delay(4, function()
+		local tweenOut = game:GetService("TweenService"):Create(
+			achievementBadge, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{ Position = UDim2.new(0.5, 0, 0, -100) })
+		tweenOut:Play()
+		tweenOut.Completed:Connect(function()
+			achievementBadge.Visible = false
+			achievementShowing = false
+			processAchievementQueue()
+		end)
+	end)
+end
+
+AchievementUnlocked.OnClientEvent:Connect(function(achievement)
+	if not achievement then return end
+	table.insert(achievementQueue, achievement)
+	processAchievementQueue()
+end)
+
+
+-- ================= Teclas de atalho =================
+-- Pedido do Lucas: sem tecla, era preciso clicar (lento demais pra
+-- combate reativo com janela curta de reacao). F/R/T/G/H para as
+-- acoes normais, Q/E pras reacoes (Bloquear/Esquivar) -- perto do
+-- WASD de proposito, pra dar pra reagir rapido sem tirar a mao do
+-- movimento.
+local UserInputService = game:GetService("UserInputService")
+local KEYBINDS = {
+	[Enum.KeyCode.F] = doAttack,
+	[Enum.KeyCode.R] = function() usePrinciple("Ren") end,
+	[Enum.KeyCode.T] = function() usePrinciple("Ten") end,
+	[Enum.KeyCode.G] = function() usePrinciple("Zetsu") end,
+	[Enum.KeyCode.H] = toggleHatsuMenu,
+	[Enum.KeyCode.Q] = doBlock,
+	[Enum.KeyCode.E] = doDodge,
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+	if gameProcessedEvent then
+		return -- jogador esta digitando em algum TextBox, ignora
+	end
+	local handler = KEYBINDS[input.KeyCode]
+	if handler then
+		handler()
+	end
+end)

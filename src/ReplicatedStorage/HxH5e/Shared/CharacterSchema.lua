@@ -31,7 +31,33 @@ return {
 			CA = 10,
 			Reacoes = 7,
 			Deslocamento = 9,
+			DeslocamentoPlanar = 0, -- so Vampiros usam (ver VampiroCasta)
 		},
+		VampiroCasta = nil, -- "Vampiro"/"Lorde Vampiro"/"Conde Vampiro"/"Imperador Vampiro" (so raca Vampiros)
+
+		-- ================= Level-up (ver LevelUpService.lua) =================
+		PendingLevelUps = {}, -- fila de niveis ainda nao confirmados (ex: {3,4} se subiu 2 de uma vez)
+		PendingAttrPoints = 0, -- pontos de atributo ganhos, ainda nao distribuidos
+		PendingInclinationPoints = 0, -- pontos de inclinacao (P.I) ganhos, ainda nao escolhidos
+		PendingProficiencyPoints = 0, -- pontos de proficiencia ganhos, ainda nao aplicados
+		EmZetsu = false, -- ver NenService.ActivatePrinciple/HatsuService.ActivateHatsu
+		Achievements = {}, -- lista de IDs de conquistas desbloqueadas (ver AchievementsDB.lua)
+		AchievementCounters = {}, -- ex: { TenAtivacoes = 5, RenAtivacoes = 12 } (so pras conquistas tipo "contador")
+		RaceCaracteristicaEscolhida = nil, -- nome da opcao escolhida (ex: raca Anao)
+		Organizacoes = {}, -- lista de { orgId, nivel (1-5), reputacao, status }, ver OrganizationService.lua
+
+		-- "Tendencia" (Heroico/Caotico/Neutro/Maligno) -- existe no
+		-- webapp real (char.alignment) mas nunca tinha sido portada.
+		-- Padrao "Neutro". Muda com um clique (ver FichaClient), sem
+		-- remote proprio -- reaproveita SetCharacterField generico se
+		-- ja existir, senao um remote dedicado sera criado.
+		Alignment = "Neutro",
+
+		-- Progressao de casta Vampiro (Sugar Aura): contadores usados
+		-- pelos requisitos reais de promocao (ver CharacterService.lua).
+		VampiroAuraTotalDrenada = 0,
+		VampiroSeresDrenados = {},
+		VampiroSobreviveuFerimentoFatal = false,
 
 		Nen = {
 			Category = nil,   -- INTENSIFICAÇÃO | TRANSMUTAÇÃO | MATERIALIZAÇÃO | EMISSÃO | MANIPULAÇÃO | ESPECIALIZAÇÃO
@@ -65,7 +91,8 @@ return {
 		Hatsus = {},
 		Skills = {},
 		Expertise = {},
-		Inventory = {},
+		Inventory = {}, -- lista de { Name, Qty } (ver ItemsDB.lua pra detalhes de cada item)
+		Money = 0, -- moeda pra comprar/vender na loja (ver ItemsDB.lua)
 		Conditions = {},
 		Inclinations = {
 			Positive = {},

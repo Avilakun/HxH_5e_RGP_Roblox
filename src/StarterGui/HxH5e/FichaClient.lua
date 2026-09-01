@@ -262,7 +262,7 @@ end
 -- outras 4 aparecem na barra mas ficam desabilitadas ("em breve").
 
 local fichaFrame = makeFrame(screenGui, "FichaWindow",
-	UDim2.fromOffset(430, 560), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+	UDim2.fromOffset(940, 640), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
 fichaFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 fichaFrame.Visible = false
 addCloseButton(fichaFrame)
@@ -277,12 +277,13 @@ local TAB_LIST = {
 	{ id = "BIO", label = "BIO", enabled = true },
 	{ id = "NEN", label = "NEN", enabled = true },
 	{ id = "TRACOS", label = "TRAÇOS", enabled = true },
-	{ id = "INV", label = "INV", enabled = false },
+	{ id = "INV", label = "INV", enabled = true },
 	{ id = "DADOS", label = "DADOS", enabled = false },
 	{ id = "COND", label = "COND", enabled = false },
 }
 
 local tabButtons = {}
+tabButtons.NenColors = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("NenColors"))
 do
 	local tabBarFrame = makeFrame(fichaFrame, "TabBar",
 		UDim2.new(1, -20, 0, 26), UDim2.new(0, 10, 0, 40), Color3.fromRGB(0, 0, 0))
@@ -316,45 +317,157 @@ local titleLabel, categoryLabel, geniusLabel, xpLabel
 local attributeNames = { "FOR", "DES", "CON", "INT", "SAB", "PRE" }
 local attributeLabels = {}
 local hpLabel, auraLabel, sanidadeLabel
+
+-- ================= ABA FICHA v2: header (retrato/nome/nivel/XP/info)
+-- + grid de 6 atributos coloridos por categoria de Nen + barra de
+-- vitals -- layout novo baseado na referencia visual do Lucas.
+-- Reaproveita tabButtons pro resto (teto de 200 locais do Luau).
+tabButtons.attrCards = {}
+tabButtons.vitalsBars = {}
+tabButtons.ALIGNMENT_CYCLE = { "Neutro", "Heróico", "Caótico", "Maligno" }
+tabButtons.VITALS_INFO = {
+	{ key = "HP", label = "VIDA", color = Color3.fromRGB(0, 255, 90) },
+	{ key = "Aura", label = "AURA", color = Color3.fromRGB(0, 180, 255) },
+	{ key = "Sanidade", label = "SANIDADE", color = Color3.fromRGB(255, 200, 0) },
+}
+
 do
-	local statusContent = makeFrame(statusScroll, "Content",
-		UDim2.new(1, 0, 0, 200), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
-	statusContent.BackgroundTransparency = 1
+	local content = makeFrame(statusScroll, "Content", UDim2.new(1, 0, 0, 470), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	content.BackgroundTransparency = 1
 
-	titleLabel = makeLabel(statusContent, "TitleLabel", "Nenhum personagem",
-		UDim2.new(0, 0, 0, 4), UDim2.new(1, -20, 0, 30), 20)
+	local header = makeFrame(content, "Header", UDim2.new(1, 0, 0, 130), UDim2.new(0, 0, 0, 0), Color3.fromRGB(18, 20, 28))
+	tabButtons.fichaHeaderStroke = Instance.new("UIStroke")
+	tabButtons.fichaHeaderStroke.Thickness = 2
+	tabButtons.fichaHeaderStroke.Color = Color3.fromRGB(0, 255, 157)
+	tabButtons.fichaHeaderStroke.Parent = header
+	Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
+
+	tabButtons.fichaPortrait = Instance.new("ImageLabel")
+	tabButtons.fichaPortrait.Name = "Portrait"
+	tabButtons.fichaPortrait.Size = UDim2.new(0, 100, 0, 100)
+	tabButtons.fichaPortrait.Position = UDim2.new(0, 10, 0, 10)
+	tabButtons.fichaPortrait.BackgroundColor3 = Color3.fromRGB(35, 38, 46)
+	tabButtons.fichaPortrait.Image = ""
+	tabButtons.fichaPortrait.Parent = header
+	Instance.new("UICorner", tabButtons.fichaPortrait).CornerRadius = UDim.new(1, 0)
+	tabButtons.fichaPortraitStroke = Instance.new("UIStroke")
+	tabButtons.fichaPortraitStroke.Thickness = 2
+	tabButtons.fichaPortraitStroke.Color = Color3.fromRGB(0, 255, 157)
+	tabButtons.fichaPortraitStroke.Parent = tabButtons.fichaPortrait
+
+	titleLabel = makeLabel(header, "TitleLabel", "Nenhum personagem",
+		UDim2.new(0, 122, 0, 8), UDim2.new(0, 220, 0, 26), 18)
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextWrapped = true
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-	categoryLabel = makeLabel(statusContent, "CategoryLabel", "Categoria: —",
-		UDim2.new(0, 0, 0, 36), UDim2.new(1, 0, 0, 20), 14)
-	categoryLabel.TextColor3 = Color3.fromRGB(0, 255, 157)
+	tabButtons.nivelMinusBtn = makeButton(header, "NivelMinus", "-",
+		UDim2.new(0, 122, 0, 40), UDim2.new(0, 24, 0, 24))
+	tabButtons.nivelLabel = makeLabel(header, "NivelLabel", "NÍVEL -/-",
+		UDim2.new(0, 150, 0, 40), UDim2.new(0, 100, 0, 24), 12)
+	tabButtons.nivelPlusBtn = makeButton(header, "NivelPlus", "+",
+		UDim2.new(0, 254, 0, 40), UDim2.new(0, 24, 0, 24))
 
-	geniusLabel = makeLabel(statusContent, "GeniusLabel", "Genialidade: —",
-		UDim2.new(0, 0, 0, 56), UDim2.new(1, 0, 0, 18), 12)
+	xpLabel = makeLabel(header, "XpLabel", "XP: -",
+		UDim2.new(0, 122, 0, 70), UDim2.new(0, 156, 0, 16), 11)
+	xpLabel.TextXAlignment = Enum.TextXAlignment.Left
+	tabButtons.xpBarFill = makeFrame(
+		makeFrame(header, "XpBarBg", UDim2.new(0, 156, 0, 6), UDim2.new(0, 122, 0, 92), Color3.fromRGB(45, 45, 45)),
+		"Fill", UDim2.new(0, 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(255, 200, 0))
+
+	tabButtons.alignmentBtn = makeButton(header, "AlignmentBtn", "TENDÊNCIA\nNeutro",
+		UDim2.new(0, 298, 0, 8), UDim2.new(0, 110, 0, 50))
+	tabButtons.alignmentBtn.TextSize = 11
+
+	tabButtons.proficienciaLabel = makeLabel(header, "ProficienciaLabel", "PROFICIÊNCIA\n?",
+		UDim2.new(0, 298, 0, 62), UDim2.new(0, 110, 0, 32), 11)
+
+	categoryLabel = makeLabel(header, "CategoryLabel", "Categoria: —",
+		UDim2.new(0, 122, 0, 104), UDim2.new(0, 300, 0, 18), 10)
+	categoryLabel.TextColor3 = Color3.fromRGB(150, 150, 160)
+	categoryLabel.TextXAlignment = Enum.TextXAlignment.Left
+	geniusLabel = makeLabel(header, "GeniusLabel", "",
+		UDim2.new(0, 420, 0, 8), UDim2.new(0, 160, 0, 18), 10)
 	geniusLabel.TextColor3 = Color3.fromRGB(190, 170, 255)
 
-	xpLabel = makeLabel(statusContent, "XpLabel", "XP: -",
-		UDim2.new(0, 0, 0, 74), UDim2.new(1, 0, 0, 18), 12)
-	xpLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+	tabButtons.deslLabel = makeLabel(header, "DeslLabel", "DESL.\n-",
+		UDim2.new(0, 420, 0, 32), UDim2.new(0, 90, 0, 32), 11)
+	tabButtons.jogadorLabel = makeLabel(header, "JogadorLabel", "JOGADOR\n-",
+		UDim2.new(0, 420, 0, 72), UDim2.new(0, 120, 0, 32), 11)
 
-	for i, attributeName in ipairs(attributeNames) do
-		local col = (i - 1) % 2
-		local row = math.floor((i - 1) / 2)
-		local label = makeLabel(statusContent, "Attr_" .. attributeName,
-			attributeName .. ": -",
-			UDim2.new(0, 20 + col * 190, 0, 100 + row * 26),
-			UDim2.new(0, 170, 0, 22), 16)
-		attributeLabels[attributeName] = label
+	local attrGrid = makeFrame(content, "AttrGrid", UDim2.new(1, 0, 0, 150), UDim2.new(0, 0, 0, 142), Color3.fromRGB(0, 0, 0))
+	attrGrid.BackgroundTransparency = 1
+	for i, attrName in ipairs(attributeNames) do
+		local card = makeFrame(attrGrid, "Card_" .. attrName, UDim2.new(0, 138, 0, 140), UDim2.new(0, (i - 1) * 146, 0, 0), Color3.fromRGB(20, 20, 26))
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 2
+		stroke.Color = Color3.fromRGB(0, 255, 157)
+		stroke.Parent = card
+		local nameLbl = makeLabel(card, "Name", attrName, UDim2.new(0, 0, 0, 8), UDim2.new(1, 0, 0, 16), 12)
+		nameLbl.Font = Enum.Font.GothamBold
+		local valueLbl = makeLabel(card, "Value", "-", UDim2.new(0, 0, 0, 30), UDim2.new(1, 0, 0, 40), 26)
+		valueLbl.Font = Enum.Font.GothamBold
+		local modLbl = makeLabel(card, "Mod", "(+0)", UDim2.new(0, 0, 0, 72), UDim2.new(1, 0, 0, 18), 12)
+		local trBadge = makeLabel(card, "TR", "+0", UDim2.new(0, 0, 0, 110), UDim2.new(1, 0, 0, 20), 12)
+		trBadge.TextColor3 = Color3.fromRGB(150, 150, 160)
+		tabButtons.attrCards[attrName] = { card = card, stroke = stroke, nameLbl = nameLbl, valueLbl = valueLbl, modLbl = modLbl, trBadge = trBadge }
 	end
 
-	hpLabel = makeLabel(statusContent, "HpLabel", "HP: -",
-		UDim2.new(0, 20, 0, 184), UDim2.new(0, 190, 0, 22), 16)
-	auraLabel = makeLabel(statusContent, "AuraLabel", "Aura: -",
-		UDim2.new(0, 210, 0, 184), UDim2.new(0, 170, 0, 22), 16)
-	sanidadeLabel = makeLabel(statusContent, "SanidadeLabel", "Sanidade: -",
-		UDim2.new(0, 20, 0, 208), UDim2.new(0, 190, 0, 22), 16)
+	local vitalsRow = makeFrame(content, "VitalsRow", UDim2.new(1, 0, 0, 66), UDim2.new(0, 0, 0, 300), Color3.fromRGB(0, 0, 0))
+	vitalsRow.BackgroundTransparency = 1
+	for i, v in ipairs(tabButtons.VITALS_INFO) do
+		local box = makeFrame(vitalsRow, "Vital_" .. v.key, UDim2.new(0, 168, 0, 60), UDim2.new(0, (i - 1) * 176, 0, 0), Color3.fromRGB(20, 20, 26))
+		Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+		local lbl = makeLabel(box, "Label", v.label, UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 16), 11)
+		lbl.TextColor3 = v.color
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		local valLbl = makeLabel(box, "Value", "- / -", UDim2.new(0, 8, 0, 20), UDim2.new(1, -16, 0, 16), 12)
+		valLbl.TextXAlignment = Enum.TextXAlignment.Left
+		local barFill = makeFrame(
+			makeFrame(box, "BarBg", UDim2.new(1, -16, 0, 6), UDim2.new(0, 8, 0, 44), Color3.fromRGB(45, 45, 45)),
+			"Fill", UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), v.color)
+		tabButtons.vitalsBars[v.key] = { valLbl = valLbl, fill = barFill }
+	end
+
+	local reacoesBox = makeFrame(vitalsRow, "Vital_Reacoes", UDim2.new(0, 168, 0, 60), UDim2.new(0, 3 * 176, 0, 0), Color3.fromRGB(20, 20, 26))
+	Instance.new("UICorner", reacoesBox).CornerRadius = UDim.new(0, 8)
+	makeLabel(reacoesBox, "Label", "REAÇÕES", UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 16), 11).TextColor3 = Color3.fromRGB(190, 100, 255)
+	tabButtons.reacoesValueLbl = makeLabel(reacoesBox, "Value", "-", UDim2.new(0, 8, 0, 22), UDim2.new(1, -16, 0, 26), 20)
+	tabButtons.reacoesValueLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	local armaduraBox = makeFrame(vitalsRow, "Vital_Armadura", UDim2.new(0, 168, 0, 60), UDim2.new(0, 4 * 176, 0, 0), Color3.fromRGB(20, 20, 26))
+	Instance.new("UICorner", armaduraBox).CornerRadius = UDim.new(0, 8)
+	makeLabel(armaduraBox, "Label", "ARMADURA", UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 16), 11).TextColor3 = Color3.fromRGB(200, 200, 200)
+	tabButtons.armaduraValueLbl = makeLabel(armaduraBox, "Value", "-", UDim2.new(0, 8, 0, 22), UDim2.new(1, -16, 0, 26), 20)
+	tabButtons.armaduraValueLbl.TextXAlignment = Enum.TextXAlignment.Left
 end
+
+hpLabel = { Text = "" }
+auraLabel = { Text = "" }
+sanidadeLabel = { Text = "" }
+
+tabButtons.alignmentBtn.Activated:Connect(function()
+	local current = tostring((GetCharacter:InvokeServer() or {}).Alignment or "Neutro")
+	local nextIndex = 1
+	for i, v in ipairs(tabButtons.ALIGNMENT_CYCLE) do
+		if v == current then
+			nextIndex = (i % #tabButtons.ALIGNMENT_CYCLE) + 1
+			break
+		end
+	end
+	local result = HxH5e.SetAlignment:InvokeServer(tabButtons.ALIGNMENT_CYCLE[nextIndex])
+	if result and result.success then
+		tabButtons.refreshFichaRef()
+	end
+end)
+
+tabButtons.nivelPlusBtn.Activated:Connect(function()
+	tabButtons.openLevelUp()
+end)
+
+tabButtons.nivelMinusBtn.Activated:Connect(function()
+	showToast("Reduzir nível manualmente ainda não está implementado.", 3)
+end)
 
 -- ---------- Conteudo: NEN (dominio + hatsus, igual ao webapp) ----------
 
@@ -533,6 +646,27 @@ do
 	bioLayout.Parent = bioScroll
 end
 
+-- ---------- Conteudo: INV (inventario + loja) ----------
+-- Reaproveita "tabButtons" de novo pra guardar o Frame (invScroll ja
+-- seria mais um local de topo, e o arquivo esta no teto de 200).
+tabButtons.invScroll = Instance.new("ScrollingFrame")
+tabButtons.invScroll.Name = "InvScroll"
+tabButtons.invScroll.Size = UDim2.new(1, -20, 1, -180)
+tabButtons.invScroll.Position = UDim2.new(0, 10, 0, 72)
+tabButtons.invScroll.BackgroundTransparency = 1
+tabButtons.invScroll.ScrollBarThickness = 6
+tabButtons.invScroll.BorderSizePixel = 0
+tabButtons.invScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+tabButtons.invScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+tabButtons.invScroll.Visible = false
+tabButtons.invScroll.Parent = fichaFrame
+do
+	local invLayout = Instance.new("UIListLayout")
+	invLayout.Padding = UDim.new(0, 6)
+	invLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	invLayout.Parent = tabButtons.invScroll
+end
+
 -- ================= Botões fixos da ficha =================
 
 local xpButton = makeButton(fichaFrame, "XpButton", "+50 XP",
@@ -648,6 +782,332 @@ local raceLayout = Instance.new("UIListLayout")
 raceLayout.Padding = UDim.new(0, 6)
 raceLayout.Parent = raceScroll
 
+-- ================= Janela de DETALHE da raça (descricao completa,
+-- bonus, caracteristicas passivas e escolha de caracteristica) =================
+-- Reaproveita tabButtons pro Frame/estado/funcoes (arquivo no teto de
+-- 200 locais do Luau).
+tabButtons.raceDetailFrame = makeFrame(screenGui, "RaceDetailWindow",
+	UDim2.fromOffset(440, 520), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+tabButtons.raceDetailFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+tabButtons.raceDetailFrame.Visible = false
+addCloseButton(tabButtons.raceDetailFrame)
+
+tabButtons.raceDetailTitle = makeLabel(tabButtons.raceDetailFrame, "RDTitle", "RAÇA",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 18)
+tabButtons.raceDetailTitle.Font = Enum.Font.GothamBold
+tabButtons.raceDetailTitle.TextColor3 = Color3.fromRGB(0, 255, 157)
+
+tabButtons.raceDetailDesc = makeLabel(tabButtons.raceDetailFrame, "RDDesc", "",
+	UDim2.new(0, 16, 0, 36), UDim2.new(1, -32, 0, 34), 12)
+tabButtons.raceDetailDesc.TextWrapped = true
+tabButtons.raceDetailDesc.TextXAlignment = Enum.TextXAlignment.Left
+tabButtons.raceDetailDesc.TextYAlignment = Enum.TextYAlignment.Top
+tabButtons.raceDetailDesc.TextColor3 = Color3.fromRGB(170, 170, 180)
+
+tabButtons.raceDetailBonus = makeLabel(tabButtons.raceDetailFrame, "RDBonus", "",
+	UDim2.new(0, 16, 0, 72), UDim2.new(1, -32, 0, 20), 13)
+tabButtons.raceDetailBonus.Font = Enum.Font.GothamBold
+tabButtons.raceDetailBonus.TextColor3 = Color3.fromRGB(255, 220, 120)
+tabButtons.raceDetailBonus.TextXAlignment = Enum.TextXAlignment.Left
+
+tabButtons.raceDetailScroll = Instance.new("ScrollingFrame")
+tabButtons.raceDetailScroll.Name = "RDScroll"
+tabButtons.raceDetailScroll.Size = UDim2.new(1, -32, 1, -160)
+tabButtons.raceDetailScroll.Position = UDim2.new(0, 16, 0, 96)
+tabButtons.raceDetailScroll.BackgroundTransparency = 1
+tabButtons.raceDetailScroll.ScrollBarThickness = 6
+tabButtons.raceDetailScroll.BorderSizePixel = 0
+tabButtons.raceDetailScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+tabButtons.raceDetailScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+tabButtons.raceDetailScroll.Parent = tabButtons.raceDetailFrame
+do
+	local rdLayout = Instance.new("UIListLayout")
+	rdLayout.Padding = UDim.new(0, 6)
+	rdLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	rdLayout.Parent = tabButtons.raceDetailScroll
+end
+
+tabButtons.raceDetailConfirm = makeButton(tabButtons.raceDetailFrame, "RDConfirm", "CONFIRMAR RAÇA",
+	UDim2.new(0, 16, 1, -46), UDim2.new(1, -32, 0, 36))
+tabButtons.raceDetailConfirm.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+
+tabButtons.raceDetailData = nil
+tabButtons.raceDetailEscolha = nil
+
+-- Formata aumento_atributo (tabela {CON=2,...} OU string "Escolha +2"/
+-- "Varia"/"Nenhum") num texto legivel de uma linha.
+tabButtons.formatarBonusAtributo = function(bonus)
+	if type(bonus) == "string" then
+		if bonus == "Nenhum" then
+			return "Bônus de Atributo: Nenhum"
+		end
+		return "Bônus de Atributo: " .. bonus .. " (escolha na próxima tela)"
+	elseif type(bonus) == "table" then
+		local partes = {}
+		for attr, delta in pairs(bonus) do
+			local sinal = delta >= 0 and "+" or ""
+			table.insert(partes, attr .. " " .. sinal .. tostring(delta))
+		end
+		return "Bônus de Atributo: " .. table.concat(partes, ", ")
+	end
+	return "Bônus de Atributo: —"
+end
+
+tabButtons.refreshRaceDetail = function(race)
+	tabButtons.raceDetailData = race
+	tabButtons.raceDetailEscolha = nil
+	tabButtons.raceDetailTitle.Text = tostring(race.nome) .. " — " .. tostring(race.categoria or "")
+	tabButtons.raceDetailDesc.Text = tostring(race.descricao or "")
+	tabButtons.raceDetailBonus.Text = tabButtons.formatarBonusAtributo(race.aumento_atributo)
+
+	for _, child in ipairs(tabButtons.raceDetailScroll:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+
+	local ordem = 0
+	if race.caracteristicas and #race.caracteristicas > 0 then
+		ordem = ordem + 1
+		local titulo = makeLabel(tabButtons.raceDetailScroll, "CaracTitulo", "CARACTERÍSTICAS (recebe todas)",
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 18), 12)
+		titulo.Font = Enum.Font.GothamBold
+		titulo.TextColor3 = Color3.fromRGB(0, 255, 157)
+		titulo.TextXAlignment = Enum.TextXAlignment.Left
+		titulo.LayoutOrder = ordem
+		for _, c in ipairs(race.caracteristicas) do
+			ordem = ordem + 1
+			local box = makeFrame(tabButtons.raceDetailScroll, "Carac_" .. ordem, UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(30, 32, 44))
+			box.AutomaticSize = Enum.AutomaticSize.Y
+			box.LayoutOrder = ordem
+			local nomeLbl = makeLabel(box, "Nome", tostring(c.nome), UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 16), 12)
+			nomeLbl.Font = Enum.Font.GothamBold
+			nomeLbl.TextXAlignment = Enum.TextXAlignment.Left
+			local efeitoLbl = makeLabel(box, "Efeito", tostring(c.efeito), UDim2.new(0, 8, 0, 20), UDim2.new(1, -16, 0, 0), 11)
+			efeitoLbl.AutomaticSize = Enum.AutomaticSize.Y
+			efeitoLbl.TextWrapped = true
+			efeitoLbl.TextXAlignment = Enum.TextXAlignment.Left
+			efeitoLbl.TextYAlignment = Enum.TextYAlignment.Top
+			efeitoLbl.TextColor3 = Color3.fromRGB(180, 180, 190)
+			box.Size = UDim2.new(1, 0, 0, 44)
+		end
+	end
+
+	if race.opcoes_caracteristica and #race.opcoes_caracteristica > 0 then
+		ordem = ordem + 1
+		local titulo2 = makeLabel(tabButtons.raceDetailScroll, "EscolhaTitulo", "ESCOLHA UMA CARACTERÍSTICA",
+			UDim2.new(0, 0, 0, 8), UDim2.new(1, 0, 0, 18), 12)
+		titulo2.Font = Enum.Font.GothamBold
+		titulo2.TextColor3 = Color3.fromRGB(0, 255, 157)
+		titulo2.TextXAlignment = Enum.TextXAlignment.Left
+		titulo2.LayoutOrder = ordem
+		for _, op in ipairs(race.opcoes_caracteristica) do
+			ordem = ordem + 1
+			local optBtn = Instance.new("TextButton")
+			optBtn.Name = "Opt_" .. ordem
+			optBtn.Text = ""
+			optBtn.AutoButtonColor = false
+			optBtn.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+			optBtn.BorderSizePixel = 0
+			optBtn.Size = UDim2.new(1, 0, 0, 54)
+			optBtn.AutomaticSize = Enum.AutomaticSize.Y
+			optBtn.LayoutOrder = ordem
+			optBtn.Parent = tabButtons.raceDetailScroll
+			local nomeLbl = makeLabel(optBtn, "Nome", "○ " .. tostring(op.nome), UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 16), 12)
+			nomeLbl.Font = Enum.Font.GothamBold
+			nomeLbl.TextXAlignment = Enum.TextXAlignment.Left
+			local efeitoLbl = makeLabel(optBtn, "Efeito", tostring(op.efeito), UDim2.new(0, 8, 0, 20), UDim2.new(1, -16, 0, 0), 11)
+			efeitoLbl.AutomaticSize = Enum.AutomaticSize.Y
+			efeitoLbl.TextWrapped = true
+			efeitoLbl.TextXAlignment = Enum.TextXAlignment.Left
+			efeitoLbl.TextYAlignment = Enum.TextYAlignment.Top
+			efeitoLbl.TextColor3 = Color3.fromRGB(180, 180, 190)
+			optBtn.Activated:Connect(function()
+				tabButtons.raceDetailEscolha = op.nome
+				for _, sibling in ipairs(tabButtons.raceDetailScroll:GetChildren()) do
+					if sibling:IsA("TextButton") then
+						sibling.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+						local nl = sibling:FindFirstChild("Nome")
+						if nl then nl.Text = "○ " .. nl.Text:gsub("^[○●] ", "") end
+					end
+				end
+				optBtn.BackgroundColor3 = Color3.fromRGB(0, 90, 60)
+				nomeLbl.Text = "● " .. op.nome
+			end)
+		end
+	end
+
+	openWindow(tabButtons.raceDetailFrame)
+end
+
+tabButtons.raceDetailConfirm.Activated:Connect(function()
+	local race = tabButtons.raceDetailData
+	if not race then return end
+	if race.opcoes_caracteristica and #race.opcoes_caracteristica > 0 and not tabButtons.raceDetailEscolha then
+		showToast("Escolha uma característica antes de confirmar.", 3)
+		return
+	end
+	pendingRace = race.nome
+	tabButtons.pendingRaceCaracteristica = tabButtons.raceDetailEscolha
+	closeWindow(tabButtons.raceDetailFrame)
+	local req = GetRaceBonusInfo:InvokeServer(race.nome)
+	if req then
+		openRaceBonusStep(req)
+	else
+		pendingRaceBonusAllocations = nil
+		openAttrStep()
+	end
+end)
+
+-- ================= Janela de DETALHE do antecedente (descricao
+-- completa, proficiencias, equipamento, escolha de caracteristica) =================
+tabButtons.bgDetailFrame = makeFrame(screenGui, "BgDetailWindow",
+	UDim2.fromOffset(440, 520), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+tabButtons.bgDetailFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+tabButtons.bgDetailFrame.Visible = false
+addCloseButton(tabButtons.bgDetailFrame)
+
+tabButtons.bgDetailTitle = makeLabel(tabButtons.bgDetailFrame, "BDTitle", "ANTECEDENTE",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 18)
+tabButtons.bgDetailTitle.Font = Enum.Font.GothamBold
+tabButtons.bgDetailTitle.TextColor3 = Color3.fromRGB(0, 255, 157)
+
+tabButtons.bgDetailDesc = makeLabel(tabButtons.bgDetailFrame, "BDDesc", "",
+	UDim2.new(0, 16, 0, 36), UDim2.new(1, -32, 0, 50), 12)
+tabButtons.bgDetailDesc.TextWrapped = true
+tabButtons.bgDetailDesc.TextXAlignment = Enum.TextXAlignment.Left
+tabButtons.bgDetailDesc.TextYAlignment = Enum.TextYAlignment.Top
+tabButtons.bgDetailDesc.TextColor3 = Color3.fromRGB(170, 170, 180)
+
+tabButtons.bgDetailScroll = Instance.new("ScrollingFrame")
+tabButtons.bgDetailScroll.Name = "BDScroll"
+tabButtons.bgDetailScroll.Size = UDim2.new(1, -32, 1, -140)
+tabButtons.bgDetailScroll.Position = UDim2.new(0, 16, 0, 92)
+tabButtons.bgDetailScroll.BackgroundTransparency = 1
+tabButtons.bgDetailScroll.ScrollBarThickness = 6
+tabButtons.bgDetailScroll.BorderSizePixel = 0
+tabButtons.bgDetailScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+tabButtons.bgDetailScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+tabButtons.bgDetailScroll.Parent = tabButtons.bgDetailFrame
+do
+	local bdLayout = Instance.new("UIListLayout")
+	bdLayout.Padding = UDim.new(0, 6)
+	bdLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	bdLayout.Parent = tabButtons.bgDetailScroll
+end
+
+tabButtons.bgDetailConfirm = makeButton(tabButtons.bgDetailFrame, "BDConfirm", "CONFIRMAR ANTECEDENTE",
+	UDim2.new(0, 16, 1, -46), UDim2.new(1, -32, 0, 36))
+tabButtons.bgDetailConfirm.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+
+tabButtons.bgDetailData = nil
+tabButtons.bgDetailEscolha = nil
+
+tabButtons.refreshBgDetail = function(bg)
+	tabButtons.bgDetailData = bg
+	tabButtons.bgDetailEscolha = nil
+	tabButtons.bgDetailTitle.Text = tostring(bg.nome)
+	tabButtons.bgDetailDesc.Text = tostring(bg.descricao or "")
+
+	for _, child in ipairs(tabButtons.bgDetailScroll:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+
+	local ordem = 0
+
+	if bg.proficiencias and #bg.proficiencias > 0 then
+		ordem = ordem + 1
+		local profLbl = makeLabel(tabButtons.bgDetailScroll, "ProfLbl", "PROFICIÊNCIAS: " .. tostring(bg.proficiencias),
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 0), 11)
+		profLbl.AutomaticSize = Enum.AutomaticSize.Y
+		profLbl.TextWrapped = true
+		profLbl.TextXAlignment = Enum.TextXAlignment.Left
+		profLbl.TextColor3 = Color3.fromRGB(120, 200, 255)
+		profLbl.LayoutOrder = ordem
+	end
+
+	if bg.equipamento and #bg.equipamento > 0 then
+		ordem = ordem + 1
+		local eqTitulo = makeLabel(tabButtons.bgDetailScroll, "EqTitulo", "EQUIPAMENTO INICIAL",
+			UDim2.new(0, 0, 0, 8), UDim2.new(1, 0, 0, 18), 12)
+		eqTitulo.Font = Enum.Font.GothamBold
+		eqTitulo.TextColor3 = Color3.fromRGB(255, 220, 120)
+		eqTitulo.TextXAlignment = Enum.TextXAlignment.Left
+		eqTitulo.LayoutOrder = ordem
+		for _, item in ipairs(bg.equipamento) do
+			ordem = ordem + 1
+			local itemLbl = makeLabel(tabButtons.bgDetailScroll, "Eq_" .. ordem, "• " .. tostring(item),
+				UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 0), 11)
+			itemLbl.AutomaticSize = Enum.AutomaticSize.Y
+			itemLbl.TextWrapped = true
+			itemLbl.TextXAlignment = Enum.TextXAlignment.Left
+			itemLbl.TextColor3 = Color3.fromRGB(180, 180, 190)
+			itemLbl.LayoutOrder = ordem
+		end
+	end
+
+	if bg.caracteristicas and #bg.caracteristicas > 0 then
+		ordem = ordem + 1
+		local titulo2 = makeLabel(tabButtons.bgDetailScroll, "EscolhaTitulo", "ESCOLHA UMA CARACTERÍSTICA",
+			UDim2.new(0, 0, 0, 8), UDim2.new(1, 0, 0, 18), 12)
+		titulo2.Font = Enum.Font.GothamBold
+		titulo2.TextColor3 = Color3.fromRGB(0, 255, 157)
+		titulo2.TextXAlignment = Enum.TextXAlignment.Left
+		titulo2.LayoutOrder = ordem
+		for _, c in ipairs(bg.caracteristicas) do
+			ordem = ordem + 1
+			local optBtn = Instance.new("TextButton")
+			optBtn.Name = "Opt_" .. ordem
+			optBtn.Text = ""
+			optBtn.AutoButtonColor = false
+			optBtn.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+			optBtn.BorderSizePixel = 0
+			optBtn.Size = UDim2.new(1, 0, 0, 54)
+			optBtn.AutomaticSize = Enum.AutomaticSize.Y
+			optBtn.LayoutOrder = ordem
+			optBtn.Parent = tabButtons.bgDetailScroll
+			local nomeLbl = makeLabel(optBtn, "Nome", "○ " .. tostring(c.nome), UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 16), 12)
+			nomeLbl.Font = Enum.Font.GothamBold
+			nomeLbl.TextXAlignment = Enum.TextXAlignment.Left
+			local efeitoLbl = makeLabel(optBtn, "Efeito", tostring(c.efeito), UDim2.new(0, 8, 0, 20), UDim2.new(1, -16, 0, 0), 11)
+			efeitoLbl.AutomaticSize = Enum.AutomaticSize.Y
+			efeitoLbl.TextWrapped = true
+			efeitoLbl.TextXAlignment = Enum.TextXAlignment.Left
+			efeitoLbl.TextYAlignment = Enum.TextYAlignment.Top
+			efeitoLbl.TextColor3 = Color3.fromRGB(180, 180, 190)
+			optBtn.Activated:Connect(function()
+				tabButtons.bgDetailEscolha = c.nome
+				for _, sibling in ipairs(tabButtons.bgDetailScroll:GetChildren()) do
+					if sibling:IsA("TextButton") then
+						sibling.BackgroundColor3 = Color3.fromRGB(30, 32, 44)
+						local nl = sibling:FindFirstChild("Nome")
+						if nl then nl.Text = "○ " .. nl.Text:gsub("^[○●] ", "") end
+					end
+				end
+				optBtn.BackgroundColor3 = Color3.fromRGB(0, 90, 60)
+				nomeLbl.Text = "● " .. c.nome
+			end)
+		end
+	end
+
+	openWindow(tabButtons.bgDetailFrame)
+end
+
+tabButtons.bgDetailConfirm.Activated:Connect(function()
+	local bg = tabButtons.bgDetailData
+	if not bg then return end
+	if bg.caracteristicas and #bg.caracteristicas > 0 and not tabButtons.bgDetailEscolha then
+		showToast("Escolha uma característica antes de confirmar.", 3)
+		return
+	end
+	pendingBackground = bg.nome
+	pendingBackgroundFeature = tabButtons.bgDetailEscolha
+	closeWindow(tabButtons.bgDetailFrame)
+	openInclinationsStep()
+end)
+
 -- ================= Janela de bônus racial (raças com "Escolha +2" etc.) =================
 
 local raceBonusFrame = makeFrame(screenGui, "RaceBonusWindow",
@@ -686,21 +1146,38 @@ raceBonusConfirmButton.TextColor3 = Color3.fromRGB(0, 255, 157)
 -- ================= Janela de atributos (compra de pontos) =================
 
 local attrFrame = makeFrame(screenGui, "AttrWindow",
-	UDim2.fromOffset(380, 420), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+	UDim2.fromOffset(380, 460), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
 attrFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 attrFrame.Visible = false
 addCloseButton(attrFrame)
 
-makeLabel(attrFrame, "AttrTitle", "ATRIBUTOS (Compra de Pontos)",
+makeLabel(attrFrame, "AttrTitle", "ATRIBUTOS",
 	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 24), 16)
 
 local attrPointsLabel = makeLabel(attrFrame, "AttrPoints", "Pontos: 0 / 20",
-	UDim2.new(0, 16, 0, 38), UDim2.new(1, -32, 0, 20), 13)
+	UDim2.new(0, 16, 0, 38), UDim2.new(1, -32, 0, 20), 12)
 attrPointsLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+attrPointsLabel.TextWrapped = true
+
+-- Abas de metodo (Compra/Rolagem/Array) -- reaproveita tabButtons pro
+-- estado E pros Frames/Buttons (arquivo no teto de 200 locais do Luau,
+-- ver aba BIO/INV).
+tabButtons.attrMethod = "compra"
+tabButtons.attrPool = {}
+tabButtons.attrAssigned = {}
+
+tabButtons.attrMethodTabsFrame = makeFrame(attrFrame, "AttrMethodTabs",
+	UDim2.new(1, -32, 0, 26), UDim2.new(0, 16, 0, 62), Color3.fromRGB(0, 0, 0))
+tabButtons.attrMethodTabsFrame.BackgroundTransparency = 1
+
+tabButtons.attrActionButton = makeButton(attrFrame, "AttrAction", "ROLAR ATRIBUTOS",
+	UDim2.new(0, 16, 0, 94), UDim2.new(1, -32, 0, 28))
+tabButtons.attrActionButton.BackgroundColor3 = Color3.fromRGB(120, 40, 160)
+tabButtons.attrActionButton.Visible = false
 
 local attrRows = {}
 for i, key in ipairs(attributeNames) do
-	local y = 68 + (i - 1) * 44
+	local y = 130 + (i - 1) * 44
 	local lbl = makeLabel(attrFrame, "AttrLbl_" .. key, key .. ": 10  (custo 0)",
 		UDim2.new(0, 16, 0, y), UDim2.new(0, 220, 0, 36), 14)
 	local minusBtn = makeButton(attrFrame, "AttrMinus_" .. key, "-",
@@ -981,23 +1458,34 @@ local function refreshFicha()
 	if not character then
 		titleLabel.Text = "Nenhum personagem"
 		categoryLabel.Text = "Categoria: —"
-		geniusLabel.Text = "Genialidade: —"
+		geniusLabel.Text = ""
 		xpLabel.Text = "XP: -"
-		for _, attributeName in ipairs(attributeNames) do
-			attributeLabels[attributeName].Text = attributeName .. ": -"
+		tabButtons.nivelLabel.Text = "NÍVEL -/-"
+		for _, attrName in ipairs(attributeNames) do
+			local c = tabButtons.attrCards[attrName]
+			c.valueLbl.Text = "-"
+			c.modLbl.Text = ""
+			c.trBadge.Text = ""
 		end
-		hpLabel.Text = "HP: -"
-		auraLabel.Text = "Aura: -"
-		sanidadeLabel.Text = "Sanidade: -"
+		for _, v in ipairs(tabButtons.VITALS_INFO) do
+			tabButtons.vitalsBars[v.key].valLbl.Text = "- / -"
+		end
+		tabButtons.reacoesValueLbl.Text = "-"
+		tabButtons.armaduraValueLbl.Text = "-"
 		refreshNen()
 		return
 	end
 
-	local racaSufixo = character.Race and ("  •  " .. tostring(character.Race)) or ""
-	titleLabel.Text = character.Name .. "  •  Nível " .. tostring(character.Level) .. racaSufixo
+	titleLabel.Text = character.Name
+	tabButtons.nivelLabel.Text = "NÍVEL " .. tostring(character.Level) .. "/12"
 
 	local nen = character.Nen or {}
 	local category = nen.Category or character.Class or nil
+	local themeColor = tabButtons.NenColors.Get(category)
+	tabButtons.fichaHeaderStroke.Color = themeColor
+	tabButtons.fichaPortraitStroke.Color = themeColor
+	tabButtons.xpBarFill.BackgroundColor3 = themeColor
+
 	if category then
 		local tier = nen.Affinity and nen.Affinity.Tier
 		local roll = nen.Affinity and nen.Affinity.Roll
@@ -1010,30 +1498,73 @@ local function refreshFicha()
 	end
 
 	if nen.Genius and nen.Genius.Tier then
-		geniusLabel.Text = "Genialidade: " .. tostring(nen.Genius.Tier)
-			.. " (" .. tostring(nen.Genius.Roll) .. ")"
+		geniusLabel.Text = "Genialidade: " .. tostring(nen.Genius.Tier) .. " (" .. tostring(nen.Genius.Roll) .. ")"
 	else
-		geniusLabel.Text = "Genialidade: —"
+		geniusLabel.Text = ""
 	end
 
 	local xp = character.XP or 0
 	local xpNext = character.XPNext or 50
-	xpLabel.Text = "XP: " .. tostring(xp) .. " / " .. tostring(xpNext)
+	xpLabel.Text = "XP  " .. tostring(xp) .. " / " .. tostring(xpNext)
+	local xpPct = xpNext > 0 and math.clamp(xp / xpNext, 0, 1) or 0
+	tabButtons.xpBarFill.Size = UDim2.new(xpPct, 0, 1, 0)
 
-	for _, attributeName in ipairs(attributeNames) do
-		local attr = character.Attributes and character.Attributes[attributeName]
-		local value = (attr and attr.value) or "-"
-		attributeLabels[attributeName].Text = attributeName .. ": " .. tostring(value)
+	tabButtons.alignmentBtn.Text = "TENDÊNCIA\n" .. tostring(character.Alignment or "Neutro")
+	tabButtons.proficienciaLabel.Text = "PROFICIÊNCIA\n?" -- pendente: aguardando definicao exata com o Lucas
+	tabButtons.deslLabel.Text = "DESL.\n" .. tostring(character.Vitals and character.Vitals.Deslocamento or "-") .. "m"
+	tabButtons.jogadorLabel.Text = "JOGADOR\n" .. tostring(game.Players.LocalPlayer.DisplayName)
+
+	for _, attrName in ipairs(attributeNames) do
+		local c = tabButtons.attrCards[attrName]
+		c.stroke.Color = themeColor
+		c.nameLbl.TextColor3 = themeColor
+		local attr = character.Attributes and character.Attributes[attrName]
+		local value = attr and attr.value or 10
+		local mod = math.floor((value - 10) / 2)
+		c.valueLbl.Text = tostring(value)
+		c.modLbl.Text = (mod >= 0 and "(+" or "(") .. tostring(mod) .. ")"
+
+		local trSkill = "TR de " .. attrName
+		local trBonus = mod
+		local isExpert = false
+		local isTrained = false
+		for _, s in ipairs(character.Expertise or {}) do
+			if s == trSkill then isExpert = true break end
+		end
+		if not isExpert then
+			for _, s in ipairs(character.Skills or {}) do
+				if s == trSkill then isTrained = true break end
+			end
+		end
+		if isExpert then
+			trBonus = trBonus + 3
+			c.trBadge.TextColor3 = Color3.fromRGB(255, 220, 0)
+		elseif isTrained then
+			trBonus = trBonus + 2
+			c.trBadge.TextColor3 = themeColor
+		else
+			c.trBadge.TextColor3 = Color3.fromRGB(110, 110, 118)
+		end
+		c.trBadge.Text = (trBonus >= 0 and "+" or "") .. tostring(trBonus)
 	end
 
 	if character.Vitals then
-		hpLabel.Text = "HP: " .. vitalText(character.Vitals.HP)
-		auraLabel.Text = "Aura: " .. vitalText(character.Vitals.Aura)
-		sanidadeLabel.Text = "Sanidade: " .. vitalText(character.Vitals.Sanidade)
+		for _, v in ipairs(tabButtons.VITALS_INFO) do
+			local vit = character.Vitals[v.key]
+			local bar = tabButtons.vitalsBars[v.key]
+			if vit then
+				bar.valLbl.Text = tostring(vit.Current) .. " / " .. tostring(vit.Max)
+				local pct = vit.Max > 0 and math.clamp(vit.Current / vit.Max, 0, 1) or 0
+				bar.fill.Size = UDim2.new(pct, 0, 1, 0)
+			end
+		end
+		tabButtons.reacoesValueLbl.Text = tostring(character.Vitals.Reacoes or "-")
+		tabButtons.armaduraValueLbl.Text = tostring(character.Vitals.CA or "-")
 	end
 
 	refreshNen()
 end
+tabButtons.refreshFichaRef = refreshFicha
 
 local function refreshList()
 	for _, child in ipairs(listScroll:GetChildren()) do
@@ -1335,6 +1866,142 @@ tabButtons.refreshBio = function()
 	end
 end
 
+-- ---------- INV: inventario + loja. Reaproveita "tabButtons" de novo
+-- (estado + funcao), pelo mesmo motivo do BIO -- arquivo no teto de 200
+-- locais do Luau.
+tabButtons.invCategoria = "armas"
+tabButtons.invBusca = ""
+
+tabButtons.refreshInv = function()
+	local scroll = tabButtons.invScroll
+	for _, child in ipairs(scroll:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextBox") or child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	local character = GetCharacter:InvokeServer()
+	if not character then
+		local lbl = makeLabel(scroll, "Empty", "Nenhum personagem ativo.",
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 30), 13)
+		return
+	end
+
+	local moneyLbl = makeLabel(scroll, "Money", "DINHEIRO: $" .. tostring(character.Money or 0),
+		UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 22), 15)
+	moneyLbl.Font = Enum.Font.GothamBold
+	moneyLbl.TextColor3 = Color3.fromRGB(255, 220, 120)
+	moneyLbl.LayoutOrder = 1
+
+	local invTitle = makeLabel(scroll, "InvTitle", "SEU INVENTÁRIO",
+		UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 20), 13)
+	invTitle.Font = Enum.Font.GothamBold
+	invTitle.TextColor3 = Color3.fromRGB(0, 255, 157)
+	invTitle.LayoutOrder = 2
+
+	local inventario = character.Inventory or {}
+	if #inventario == 0 then
+		local vazio = makeLabel(scroll, "InvVazio", "Nenhum item ainda.",
+			UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 20), 11)
+		vazio.TextColor3 = Color3.fromRGB(150, 150, 165)
+		vazio.LayoutOrder = 3
+	end
+	for ii, item in ipairs(inventario) do
+		local row = makeFrame(scroll, "InvItem_" .. ii, UDim2.new(1, 0, 0, 32), UDim2.new(0, 0, 0, 0), Color3.fromRGB(38, 42, 58))
+		row.LayoutOrder = 3 + ii
+		local lbl = makeLabel(row, "Lbl", item.Name .. "  x" .. item.Qty,
+			UDim2.new(0, 8, 0, 0), UDim2.new(1, -100, 1, 0), 12)
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		local sellBtn = makeButton(row, "Sell", "VENDER 1",
+			UDim2.new(1, -92, 0, 3), UDim2.new(0, 84, 0, 26))
+		sellBtn.TextSize = 10
+		sellBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+		sellBtn.Activated:Connect(function()
+			local result = HxH5e.SellItem:InvokeServer(item.Name, 1)
+			showToast(tostring(result and (result.message or result.error)), 3)
+			tabButtons.refreshInv()
+		end)
+	end
+
+	local lojaTitle = makeLabel(scroll, "LojaTitle", "LOJA",
+		UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 20), 13)
+	lojaTitle.Font = Enum.Font.GothamBold
+	lojaTitle.TextColor3 = Color3.fromRGB(255, 200, 0)
+	lojaTitle.LayoutOrder = 1000
+
+	local buscaBox = Instance.new("TextBox")
+	buscaBox.Name = "InvBusca"
+	buscaBox.Size = UDim2.new(1, 0, 0, 30)
+	buscaBox.PlaceholderText = "🔍 Buscar item por nome (todas as categorias)..."
+	buscaBox.Text = tabButtons.invBusca
+	buscaBox.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+	buscaBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	buscaBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
+	buscaBox.Font = Enum.Font.Gotham
+	buscaBox.TextSize = 13
+	buscaBox.BorderSizePixel = 0
+	buscaBox.LayoutOrder = 1001
+	buscaBox.Parent = scroll
+	buscaBox.FocusLost:Connect(function()
+		tabButtons.invBusca = buscaBox.Text
+		tabButtons.refreshInv()
+	end)
+
+	local CATEGORIAS = {
+		{ id = "armas", label = "Armas" },
+		{ id = "armaduras", label = "Armaduras" },
+		{ id = "municoes", label = "Munições" },
+		{ id = "itens_medicos", label = "Médicos" },
+		{ id = "kits", label = "Kits" },
+		{ id = "equipamentos_gerais", label = "Gerais" },
+	}
+	local abasFrame = makeFrame(scroll, "CategoriaAbas", UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 0, 0))
+	abasFrame.BackgroundTransparency = 1
+	abasFrame.LayoutOrder = 1002
+	for ci, catInfo in ipairs(CATEGORIAS) do
+		local btn = makeButton(abasFrame, "Cat_" .. catInfo.id, catInfo.label,
+			UDim2.new(0, (ci - 1) * 84, 0, 0), UDim2.new(0, 80, 0, 26))
+		btn.TextSize = 9
+		btn.BackgroundColor3 = (tabButtons.invCategoria == catInfo.id)
+			and Color3.fromRGB(0, 255, 157) or Color3.fromRGB(38, 42, 58)
+		btn.TextColor3 = (tabButtons.invCategoria == catInfo.id)
+			and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(255, 255, 255)
+		btn.Activated:Connect(function()
+			tabButtons.invCategoria = catInfo.id
+			tabButtons.refreshInv()
+		end)
+	end
+
+	local ItemsDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("ItemsDB"))
+	local buscaAtiva = #tabButtons.invBusca > 0
+	local listaItens = buscaAtiva and ItemsDB.Todos or (ItemsDB[tabButtons.invCategoria] or {})
+
+	local ordem = 1003
+	for _, item in ipairs(listaItens) do
+		local bate = (not buscaAtiva) or item.nome:lower():find(tabButtons.invBusca:lower(), 1, true) ~= nil
+		if bate then
+			ordem = ordem + 1
+			local row = makeFrame(scroll, "Shop_" .. ordem, UDim2.new(1, 0, 0, 32), UDim2.new(0, 0, 0, 0), Color3.fromRGB(30, 32, 44))
+			row.LayoutOrder = ordem
+			local infoTxt = item.nome .. "  ($" .. item.custo .. ")"
+			if item.dano then infoTxt = infoTxt .. " — " .. item.dano end
+			if item.ca then infoTxt = infoTxt .. " — CA " .. tostring(item.ca) end
+			local lbl = makeLabel(row, "Lbl", infoTxt,
+				UDim2.new(0, 8, 0, 0), UDim2.new(1, -100, 1, 0), 11)
+			lbl.TextXAlignment = Enum.TextXAlignment.Left
+			lbl.TextWrapped = true
+			local buyBtn = makeButton(row, "Buy", "COMPRAR",
+				UDim2.new(1, -92, 0, 3), UDim2.new(0, 84, 0, 26))
+			buyBtn.TextSize = 10
+			buyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+			buyBtn.Activated:Connect(function()
+				local result = HxH5e.BuyItem:InvokeServer(item.nome, 1)
+				showToast(tostring(result and (result.message or result.error)), 3)
+				tabButtons.refreshInv()
+			end)
+		end
+	end
+end
+
 local function refreshTracos()
 	for _, child in ipairs(tracosScroll:GetChildren()) do
 		if child:IsA("Frame") or child:IsA("TextLabel") then
@@ -1367,14 +2034,53 @@ local function refreshTracos()
 		body.TextColor3 = Color3.fromRGB(210, 210, 220)
 	end
 
-	local racaTxt = tostring(character.Race or "—")
+	-- RAÇA: nome + caracteristicas PASSIVAS (recebe todas) + a
+	-- ESCOLHIDA (se a raca tiver opcoes_caracteristica), com efeito
+	-- completo -- nao so o nome. Busca os dados completos da raca de
+	-- novo (GetRaces ja envia caracteristicas/opcoes_caracteristica).
+	local racaLinhas = { tostring(character.Race or "—") }
 	if character.RaceBonusPending and #character.RaceBonusPending > 0 then
-		racaTxt = racaTxt .. "\n(bônus a definir: " .. table.concat(character.RaceBonusPending, ", ") .. ")"
+		table.insert(racaLinhas, "(bônus a definir: " .. table.concat(character.RaceBonusPending, ", ") .. ")")
 	end
-	addSection("RAÇA", racaTxt)
+	if character.Race then
+		local todasRacas = GetRaces:InvokeServer() or {}
+		local racaCompleta = nil
+		for _, r in ipairs(todasRacas) do
+			if r.nome == character.Race then racaCompleta = r break end
+		end
+		if racaCompleta then
+			for _, c in ipairs(racaCompleta.caracteristicas or {}) do
+				table.insert(racaLinhas, "• " .. c.nome .. ": " .. c.efeito)
+			end
+			if character.RaceCaracteristicaEscolhida and racaCompleta.opcoes_caracteristica then
+				for _, op in ipairs(racaCompleta.opcoes_caracteristica) do
+					if op.nome == character.RaceCaracteristicaEscolhida then
+						table.insert(racaLinhas, "★ " .. op.nome .. " (escolhida): " .. op.efeito)
+						break
+					end
+				end
+			end
+		end
+	end
+	addSection("RAÇA", table.concat(racaLinhas, "\n"))
 
-	local bgTxt = character.Background and (tostring(character.Background) .. "\nCaracterística: " .. tostring(character.BackgroundFeature)) or "—"
-	addSection("ANTECEDENTE", bgTxt)
+	-- ANTECEDENTE: nome + a caracteristica escolhida com efeito completo.
+	local bgLinhas = { character.Background and tostring(character.Background) or "—" }
+	if character.Background and character.BackgroundFeature then
+		local todosBgs = GetBackgrounds:InvokeServer() or {}
+		for _, b in ipairs(todosBgs) do
+			if b.nome == character.Background then
+				for _, c in ipairs(b.caracteristicas or {}) do
+					if c.nome == character.BackgroundFeature then
+						table.insert(bgLinhas, "★ " .. c.nome .. ": " .. c.efeito)
+						break
+					end
+				end
+				break
+			end
+		end
+	end
+	addSection("ANTECEDENTE", table.concat(bgLinhas, "\n"))
 
 	local skillsTxt = (character.Skills and #character.Skills > 0) and table.concat(character.Skills, ", ") or "—"
 	addSection("PERÍCIAS", skillsTxt, Color3.fromRGB(0, 200, 255))
@@ -1392,6 +2098,24 @@ local function refreshTracos()
 	end
 	addSection("INCLINAÇÕES POSITIVAS", #incPos > 0 and table.concat(incPos, ", ") or "—", Color3.fromRGB(0, 255, 157))
 	addSection("INCLINAÇÕES NEGATIVAS", #incNeg > 0 and table.concat(incNeg, ", ") or "—", Color3.fromRGB(255, 100, 100))
+
+	-- CONQUISTAS: registro persistente (pedido do Lucas: "tambem fica
+	-- marcado/registrado na ficha", alem do badge passageiro no HUD).
+	local conquistasTxt = "—"
+	if character.Achievements and #character.Achievements > 0 then
+		local catalogo = HxH5e.GetAchievementsCatalog:InvokeServer() or {}
+		local porId = {}
+		for _, a in ipairs(catalogo) do porId[a.id] = a end
+		local linhas = {}
+		for _, id in ipairs(character.Achievements) do
+			local def = porId[id]
+			if def then
+				table.insert(linhas, "🏆 " .. def.nome)
+			end
+		end
+		conquistasTxt = table.concat(linhas, "\n")
+	end
+	addSection("CONQUISTAS (" .. (character.Achievements and #character.Achievements or 0) .. ")", conquistasTxt, Color3.fromRGB(255, 200, 0))
 end
 
 local function setFichaTab(tabId)
@@ -1410,7 +2134,9 @@ local function setFichaTab(tabId)
 		return
 	end
 
-	for id, btn in pairs(tabButtons) do
+	for _, tabInfo2 in ipairs(TAB_LIST) do
+		local id = tabInfo2.id
+		local btn = tabButtons[id]
 		local isActive = (id == tabId)
 		btn.BackgroundColor3 = isActive and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(38, 42, 58)
 	end
@@ -1419,6 +2145,7 @@ local function setFichaTab(tabId)
 	nenScroll.Visible = (tabId == "NEN")
 	tracosScroll.Visible = (tabId == "TRACOS")
 	bioScroll.Visible = (tabId == "BIO")
+	tabButtons.invScroll.Visible = (tabId == "INV")
 
 	if tabId == "NEN" then
 		refreshNen()
@@ -1427,6 +2154,8 @@ local function setFichaTab(tabId)
 		refreshTracos()
 	elseif tabId == "BIO" then
 		tabButtons.refreshBio()
+	elseif tabId == "INV" then
+		tabButtons.refreshInv()
 	end
 end
 
@@ -1439,13 +2168,13 @@ end
 local pendingCreateName = nil
 local pendingRace = nil
 local pendingRaceBonusAllocations = nil
-local pendingAttrs = nil
+local pendingAttrs = {}
 local pointBuyInfo = nil -- { costs = {...}, maxCost = 20, defaultValue = 10 }
 local backgroundsCache = nil
 local selectedBgName = nil
 
 local function finishCreateCharacter(raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills)
-	local result = CreateCharacter:InvokeServer(pendingCreateName, raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, pendingRaceBonusAllocations)
+	local result = CreateCharacter:InvokeServer(pendingCreateName, raceName, attrsBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, pendingRaceBonusAllocations, tabButtons.attrMethod, nil, tabButtons.pendingRaceCaracteristica)
 	if result and result.success then
 		local character = result.character
 		local nen = character.Nen or {}
@@ -1496,16 +2225,37 @@ local function attrCost(value)
 end
 
 local function refreshAttrUI()
-	local total = 0
-	for _, key in ipairs(attributeNames) do
-		local value = pendingAttrs[key]
-		local cost = attrCost(value)
-		total = total + cost
-		attrRows[key].label.Text = key .. ": " .. value .. "  (custo " .. cost .. ")"
+	if tabButtons.attrMethod == "compra" then
+		local total = 0
+		for _, key in ipairs(attributeNames) do
+			local value = pendingAttrs[key]
+			local cost = attrCost(value)
+			total = total + cost
+			attrRows[key].label.Text = key .. ": " .. value .. "  (custo " .. cost .. ")"
+			attrRows[key].minus.Visible = true
+			attrRows[key].plus.Visible = true
+		end
+		local maxCost = pointBuyInfo and pointBuyInfo.maxCost or 20
+		attrPointsLabel.Text = "Pontos: " .. total .. " / " .. maxCost
+		attrPointsLabel.TextColor3 = (total > maxCost) and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 220, 120)
+	else
+		-- Rolagem/Array: mostra o valor atribuido (ou vazio) por atributo,
+		-- e a lista dos valores do banco que ainda nao foram usados.
+		for _, key in ipairs(attributeNames) do
+			local val = tabButtons.attrAssigned[key]
+			attrRows[key].label.Text = key .. ": " .. (val and tostring(val) or "—")
+			attrRows[key].minus.Visible = (val ~= nil)
+			attrRows[key].plus.Visible = (val == nil) and (#tabButtons.attrPool > 0)
+			pendingAttrs[key] = val or 10 -- fallback seguro; validado de verdade so no confirmar
+		end
+		if #tabButtons.attrPool > 0 then
+			attrPointsLabel.Text = "Disponível: " .. table.concat(tabButtons.attrPool, ", ")
+			attrPointsLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+		else
+			attrPointsLabel.Text = "Todos os valores distribuídos."
+			attrPointsLabel.TextColor3 = Color3.fromRGB(0, 255, 157)
+		end
 	end
-	local maxCost = pointBuyInfo and pointBuyInfo.maxCost or 20
-	attrPointsLabel.Text = "Pontos: " .. total .. " / " .. maxCost
-	attrPointsLabel.TextColor3 = (total > maxCost) and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 220, 120)
 end
 
 -- ================= Passo: Bônus racial (raças com escolha manual) =================
@@ -1595,25 +2345,118 @@ raceBonusConfirmButton.Activated:Connect(function()
 	openAttrStep()
 end)
 
+tabButtons.ATTR_METHOD_LABELS = {
+	{ id = "compra", label = "Compra" },
+	{ id = "rolagem", label = "Rolagem" },
+	{ id = "array", label = "Array" },
+}
+
+tabButtons.setAttrMethod = function(method)
+	tabButtons.attrMethod = method
+	tabButtons.attrPool = {}
+	tabButtons.attrAssigned = {}
+	tabButtons.attrMethodLocked = false -- reseta a trava (novo personagem/nova tentativa)
+	for _, key in ipairs(attributeNames) do
+		pendingAttrs[key] = (pointBuyInfo and pointBuyInfo.defaultValue) or 10
+	end
+	if method == "compra" then
+		tabButtons.attrActionButton.Visible = false
+	elseif method == "rolagem" then
+		tabButtons.attrActionButton.Visible = true
+		tabButtons.attrActionButton.Text = "🎲 ROLAR ATRIBUTOS (4d6, descarta o menor)"
+		tabButtons.attrActionButton.BackgroundColor3 = Color3.fromRGB(120, 40, 160)
+	else
+		tabButtons.attrActionButton.Visible = true
+		tabButtons.attrActionButton.Text = "USAR ARRAY PADRÃO (15,14,13,12,10,8)"
+	end
+	for _, btnInfo in ipairs(tabButtons.ATTR_METHOD_LABELS) do
+		local btn = tabButtons.attrMethodTabsFrame:FindFirstChild("Tab_" .. btnInfo.id)
+		if btn then
+			btn.BackgroundColor3 = (tabButtons.attrMethod == btnInfo.id)
+				and Color3.fromRGB(0, 255, 157) or Color3.fromRGB(38, 42, 58)
+			btn.TextColor3 = (tabButtons.attrMethod == btnInfo.id)
+				and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(255, 255, 255)
+		end
+	end
+	refreshAttrUI()
+end
+
+for i, btnInfo in ipairs(tabButtons.ATTR_METHOD_LABELS) do
+	local btn = makeButton(tabButtons.attrMethodTabsFrame, "Tab_" .. btnInfo.id, btnInfo.label,
+		UDim2.new(0, (i - 1) * 116, 0, 0), UDim2.new(0, 112, 0, 26))
+	btn.TextSize = 11
+	btn.Activated:Connect(function()
+		if tabButtons.attrMethodLocked and btnInfo.id ~= tabButtons.attrMethod then
+			showToast("Você já rolou os atributos. Não é possível trocar de método agora.", 4)
+			return
+		end
+		tabButtons.setAttrMethod(btnInfo.id)
+	end)
+end
+
+tabButtons.attrActionButton.Activated:Connect(function()
+	if tabButtons.attrMethod == "rolagem" and tabButtons.attrMethodLocked then
+		showToast("Você já rolou os atributos. Não é possível rolar de novo nem trocar de método.", 4)
+		return
+	end
+	local pool
+	if tabButtons.attrMethod == "rolagem" then
+		pool = HxH5e.RollAttributePool:InvokeServer()
+		if type(pool) == "table" and pool.locked then
+			showToast(tostring(pool.error), 4)
+			return
+		end
+		-- Trava definitiva: uma vez rolado, nao da mais pra rolar de novo
+		-- nem trocar de metodo (evita "cacar" um resultado bom).
+		tabButtons.attrMethodLocked = true
+		tabButtons.attrActionButton.Text = "✅ JÁ ROLADO (travado)"
+		tabButtons.attrActionButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+		for _, btnInfo in ipairs(tabButtons.ATTR_METHOD_LABELS) do
+			local btn = tabButtons.attrMethodTabsFrame:FindFirstChild("Tab_" .. btnInfo.id)
+			if btn and btnInfo.id ~= "rolagem" then
+				btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+				btn.TextColor3 = Color3.fromRGB(90, 90, 95)
+			end
+		end
+	else
+		pool = HxH5e.GetStandardArray:InvokeServer()
+	end
+	tabButtons.attrPool = pool
+	tabButtons.attrAssigned = {}
+	refreshAttrUI()
+end)
+
 function openAttrStep()
 	if not pointBuyInfo then
 		pointBuyInfo = GetPointBuyInfo:InvokeServer()
 	end
-	pendingAttrs = {}
-	for _, key in ipairs(attributeNames) do
-		pendingAttrs[key] = (pointBuyInfo and pointBuyInfo.defaultValue) or 10
-	end
-	refreshAttrUI()
+	tabButtons.setAttrMethod("compra")
 	openWindow(attrFrame)
 end
 
 for _, key in ipairs(attributeNames) do
 	attrRows[key].minus.Activated:Connect(function()
-		pendingAttrs[key] = math.max(1, pendingAttrs[key] - 1)
+		if tabButtons.attrMethod == "compra" then
+			pendingAttrs[key] = math.max(1, pendingAttrs[key] - 1)
+		else
+			local val = tabButtons.attrAssigned[key]
+			if val then
+				table.insert(tabButtons.attrPool, val)
+				table.sort(tabButtons.attrPool, function(a, b) return a > b end)
+				tabButtons.attrAssigned[key] = nil
+			end
+		end
 		refreshAttrUI()
 	end)
 	attrRows[key].plus.Activated:Connect(function()
-		pendingAttrs[key] = math.min(30, pendingAttrs[key] + 1)
+		if tabButtons.attrMethod == "compra" then
+			pendingAttrs[key] = math.min(30, pendingAttrs[key] + 1)
+		else
+			if not tabButtons.attrAssigned[key] and #tabButtons.attrPool > 0 then
+				local val = table.remove(tabButtons.attrPool, 1)
+				tabButtons.attrAssigned[key] = val
+			end
+		end
 		refreshAttrUI()
 	end)
 end
@@ -1642,29 +2485,14 @@ local function refreshBackgrounds()
 		rowDesc.TextWrapped = true
 		rowDesc.TextYAlignment = Enum.TextYAlignment.Top
 		rowDesc.TextColor3 = Color3.fromRGB(170, 170, 180)
-		local escolherBtn = makeButton(row, "BEscolher", expandido and "SELECIONADO" or "VER",
+		local escolherBtn = makeButton(row, "BEscolher", "VER",
 			UDim2.new(1, -96, 0, 14), UDim2.new(0, 86, 0, 36))
 		escolherBtn.TextSize = 11
-		escolherBtn.BackgroundColor3 = expandido and Color3.fromRGB(0, 120, 70) or Color3.fromRGB(48, 62, 110)
+		escolherBtn.BackgroundColor3 = Color3.fromRGB(48, 62, 110)
 		escolherBtn.Activated:Connect(function()
-			selectedBgName = expandido and nil or bg.nome
-			refreshBackgrounds()
+			closeWindow(bgFrame)
+			tabButtons.refreshBgDetail(bg)
 		end)
-		if expandido then
-			for fi, c in ipairs(bg.caracteristicas) do
-				local featBtn = makeButton(row, "BFeat_" .. fi, "🌟 " .. tostring(c.nome),
-					UDim2.new(0, 10, 0, 64 + (fi - 1) * 28), UDim2.new(1, -20, 0, 24))
-				featBtn.TextSize = 10
-				featBtn.TextXAlignment = Enum.TextXAlignment.Left
-				featBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 30)
-				featBtn.Activated:Connect(function()
-					pendingBackground = bg.nome
-					pendingBackgroundFeature = c.nome
-					closeWindow(bgFrame)
-					openInclinationsStep()
-				end)
-			end
-		end
 	end
 end
 
@@ -2004,14 +2832,24 @@ skillConfirmButton.Activated:Connect(function()
 end)
 
 attrConfirmButton.Activated:Connect(function()
-	local total = 0
-	for _, key in ipairs(attributeNames) do
-		total = total + attrCost(pendingAttrs[key])
-	end
-	local maxCost = pointBuyInfo and pointBuyInfo.maxCost or 20
-	if total > maxCost then
-		showToast("Você gastou " .. total .. " pontos, o máximo é " .. maxCost .. ".")
-		return
+	if tabButtons.attrMethod == "compra" then
+		local total = 0
+		for _, key in ipairs(attributeNames) do
+			total = total + attrCost(pendingAttrs[key])
+		end
+		local maxCost = pointBuyInfo and pointBuyInfo.maxCost or 20
+		if total > maxCost then
+			showToast("Você gastou " .. total .. " pontos, o máximo é " .. maxCost .. ".")
+			return
+		end
+	else
+		for _, key in ipairs(attributeNames) do
+			if not tabButtons.attrAssigned[key] then
+				showToast("Distribua todos os 6 valores antes de continuar.", 3)
+				return
+			end
+			pendingAttrs[key] = tabButtons.attrAssigned[key]
+		end
 	end
 	closeWindow(attrFrame)
 	openBackgroundStep()
@@ -2046,15 +2884,8 @@ local function refreshRaces()
 			UDim2.new(1, -96, 0, 14), UDim2.new(0, 86, 0, 36))
 		escolherBtn.TextSize = 11
 		escolherBtn.Activated:Connect(function()
-			pendingRace = race.nome
 			closeWindow(raceFrame)
-			local req = GetRaceBonusInfo:InvokeServer(race.nome)
-			if req then
-				openRaceBonusStep(req)
-			else
-				pendingRaceBonusAllocations = nil
-				openAttrStep()
-			end
+			tabButtons.refreshRaceDetail(race)
 		end)
 	end
 end
@@ -2104,6 +2935,9 @@ xpButton.Activated:Connect(function()
 		showToast(tostring(result.message or result.error), 3)
 	end
 	refreshFicha()
+	if result and result.success and result.pendingLevelUps and #result.pendingLevelUps > 0 then
+		tabButtons.openLevelUp()
+	end
 end)
 
 fecharFichaButton.Activated:Connect(function()
@@ -2167,6 +3001,153 @@ for _, name in ipairs(ADV_NAMES) do
 	end)
 end
 
+-- ================= JANELA DE LEVEL-UP =================
+-- Reaproveita tabButtons pro Frame/estado/funcoes (arquivo no teto de
+-- 200 locais do Luau, ver aba BIO/INV/Atributos).
+tabButtons.levelUpFrame = makeFrame(screenGui, "LevelUpWindow",
+	UDim2.fromOffset(400, 440), UDim2.new(0.5, 0, 0.5, 0), Color3.fromRGB(22, 24, 34))
+tabButtons.levelUpFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+tabButtons.levelUpFrame.Visible = false
+addCloseButton(tabButtons.levelUpFrame)
+
+tabButtons.levelUpTitle = makeLabel(tabButtons.levelUpFrame, "LvlTitle", "NÍVEL X",
+	UDim2.new(0, 16, 0, 10), UDim2.new(1, -40, 0, 26), 18)
+tabButtons.levelUpTitle.Font = Enum.Font.GothamBold
+tabButtons.levelUpTitle.TextColor3 = Color3.fromRGB(255, 200, 0)
+
+tabButtons.levelUpRewards = makeLabel(tabButtons.levelUpFrame, "LvlRewards", "",
+	UDim2.new(0, 16, 0, 42), UDim2.new(1, -32, 0, 60), 12)
+tabButtons.levelUpRewards.TextWrapped = true
+tabButtons.levelUpRewards.TextXAlignment = Enum.TextXAlignment.Left
+tabButtons.levelUpRewards.TextYAlignment = Enum.TextYAlignment.Top
+tabButtons.levelUpRewards.TextColor3 = Color3.fromRGB(200, 200, 210)
+
+tabButtons.levelUpDiceLabel = makeLabel(tabButtons.levelUpFrame, "LvlDiceLabel", "Dado de Vida: —",
+	UDim2.new(0, 16, 0, 106), UDim2.new(1, -32, 0, 20), 13)
+tabButtons.levelUpDiceLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+
+tabButtons.levelUpRollButton = makeButton(tabButtons.levelUpFrame, "LvlRoll", "🎲 ROLAR DADO",
+	UDim2.new(0, 16, 0, 130), UDim2.new(0, 178, 0, 36))
+tabButtons.levelUpMediaButton = makeButton(tabButtons.levelUpFrame, "LvlMedia", "USAR MÉDIA",
+	UDim2.new(0, 202, 0, 130), UDim2.new(0, 182, 0, 36))
+
+tabButtons.levelUpResultLabel = makeLabel(tabButtons.levelUpFrame, "LvlResult", "",
+	UDim2.new(0, 16, 0, 172), UDim2.new(1, -32, 0, 24), 13)
+tabButtons.levelUpResultLabel.TextColor3 = Color3.fromRGB(0, 255, 157)
+
+tabButtons.levelUpChoiceLabel = makeLabel(tabButtons.levelUpFrame, "LvlChoiceLabel", "Escolha: Atributo ou Aura",
+	UDim2.new(0, 16, 0, 204), UDim2.new(1, -32, 0, 20), 13)
+tabButtons.levelUpChoiceLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+tabButtons.levelUpChoiceLabel.Visible = false
+
+tabButtons.levelUpAttrButton = makeButton(tabButtons.levelUpFrame, "LvlChoiceAttr", "ATRIBUTO",
+	UDim2.new(0, 16, 0, 228), UDim2.new(0, 178, 0, 36))
+tabButtons.levelUpAuraButton = makeButton(tabButtons.levelUpFrame, "LvlChoiceAura", "AURA",
+	UDim2.new(0, 202, 0, 228), UDim2.new(0, 182, 0, 36))
+tabButtons.levelUpAttrButton.Visible = false
+tabButtons.levelUpAuraButton.Visible = false
+
+tabButtons.levelUpConfirmButton = makeButton(tabButtons.levelUpFrame, "LvlConfirm", "CONFIRMAR NÍVEL",
+	UDim2.new(0, 16, 1, -50), UDim2.new(1, -32, 0, 38))
+tabButtons.levelUpConfirmButton.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+
+tabButtons.levelUpState = { hitGain = nil, attrChoice = nil, isAttrChoice = false }
+
+tabButtons.refreshLevelUp = function()
+	local pending = HxH5e.GetNextPendingLevel:InvokeServer()
+	if not pending then
+		closeWindow(tabButtons.levelUpFrame)
+		return
+	end
+	tabButtons.levelUpState = { hitGain = nil, attrChoice = nil, isAttrChoice = pending.isAttrChoice }
+
+	local r = pending.rewards
+	tabButtons.levelUpTitle.Text = "🎉 NÍVEL " .. pending.nivel .. " — " .. tostring(r.titulo)
+	local linhas = {}
+	if r.pi and r.pi > 0 then table.insert(linhas, "+" .. r.pi .. " Ponto(s) de Inclinação") end
+	if r.prof and r.prof > 0 then table.insert(linhas, "+" .. r.prof .. " Ponto(s) de Proficiência") end
+	if r.pn and r.pn > 0 then table.insert(linhas, "P.N do pool sobe automaticamente") end
+	if pending.restantesNaFila > 1 then
+		table.insert(linhas, "(" .. (pending.restantesNaFila - 1) .. " nível(is) na fila depois deste)")
+	end
+	tabButtons.levelUpRewards.Text = table.concat(linhas, "\n")
+
+	tabButtons.levelUpDiceLabel.Text = "Dado de Vida: 1d" .. pending.hitDiceInfo.faces
+		.. " + CON (" .. pending.hitDiceInfo.conMod .. ")"
+		.. (pending.hitDiceInfo.giantBonus > 0 and (" + Gigante (" .. pending.hitDiceInfo.giantBonus .. ")") or "")
+	tabButtons.levelUpResultLabel.Text = ""
+
+	tabButtons.levelUpChoiceLabel.Visible = pending.isAttrChoice
+	tabButtons.levelUpAttrButton.Visible = pending.isAttrChoice
+	tabButtons.levelUpAuraButton.Visible = pending.isAttrChoice
+	tabButtons.levelUpAttrButton.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+	tabButtons.levelUpAuraButton.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+	if pending.isAttrChoice then
+		tabButtons.levelUpAttrButton.Text = "ATRIBUTO (+" .. r.attr .. ")"
+		tabButtons.levelUpAuraButton.Text = "AURA (+" .. r.auraP .. "%)"
+	end
+
+	tabButtons.levelUpConfirmButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+	openWindow(tabButtons.levelUpFrame)
+end
+
+tabButtons.openLevelUp = function()
+	tabButtons.refreshLevelUp()
+end
+
+tabButtons.levelUpRollButton.Activated:Connect(function()
+	local result = HxH5e.RollHitDie:InvokeServer()
+	if result and result.total then
+		tabButtons.levelUpState.hitGain = result.total
+		tabButtons.levelUpResultLabel.Text = "🎲 Rolou " .. result.roll .. " + " .. result.conMod
+			.. (result.giantBonus > 0 and (" + " .. result.giantBonus) or "") .. " = +" .. result.total .. " PV"
+		tabButtons.levelUpConfirmButton.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+	end
+end)
+
+tabButtons.levelUpMediaButton.Activated:Connect(function()
+	local result = HxH5e.GetMediaHitDie:InvokeServer()
+	if result and result.total then
+		tabButtons.levelUpState.hitGain = result.total
+		tabButtons.levelUpResultLabel.Text = "📊 Média: +" .. result.total .. " PV"
+		tabButtons.levelUpConfirmButton.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+	end
+end)
+
+tabButtons.levelUpAttrButton.Activated:Connect(function()
+	tabButtons.levelUpState.attrChoice = "attr"
+	tabButtons.levelUpAttrButton.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+	tabButtons.levelUpAuraButton.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+end)
+
+tabButtons.levelUpAuraButton.Activated:Connect(function()
+	tabButtons.levelUpState.attrChoice = "aura"
+	tabButtons.levelUpAuraButton.BackgroundColor3 = Color3.fromRGB(0, 120, 70)
+	tabButtons.levelUpAttrButton.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
+end)
+
+tabButtons.levelUpConfirmButton.Activated:Connect(function()
+	local st = tabButtons.levelUpState
+	if not st.hitGain then
+		showToast("Role o dado de vida ou use a média antes de confirmar.", 3)
+		return
+	end
+	if st.isAttrChoice and not st.attrChoice then
+		showToast("Escolha Atributo ou Aura antes de confirmar.", 3)
+		return
+	end
+	local result = HxH5e.ConfirmLevelUp:InvokeServer(st.hitGain, st.attrChoice)
+	if result then
+		showToast(tostring(result.message or result.error), 5)
+	end
+	refreshFicha()
+	if result and result.success and result.restantesNaFila and result.restantesNaFila > 0 then
+		tabButtons.refreshLevelUp()
+	else
+		closeWindow(tabButtons.levelUpFrame)
+	end
+end)
+
 -- ================= JANELAS ARRASTÁVEIS =================
 
 local function makeDraggable(frame, handle)
@@ -2229,6 +3210,7 @@ addDragBar(bgFrame)
 addDragBar(incFrame)
 addDragBar(skillFrame)
 addDragBar(resultFrame)
+addDragBar(tabButtons.levelUpFrame)
 
 
 -- ================================================================
