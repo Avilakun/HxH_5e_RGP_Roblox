@@ -406,6 +406,62 @@ local function findBackgroundByName(bgName)
 	return nil
 end
 
+-- ================= Equipamento do antecedente (com escolha) =================
+-- Cada entrada de background.equipamento e um TEXTO. 3 formatos:
+-- 1) "Qualquer arma simples" / "Qualquer arma" -- exige escolha do
+--    jogador entre as armas do catalogo. ⚠️ LIMITACAO: o ItemsDB.lua
+--    atual nao tem a distincao Simples/Marcial (foi simplificado ao
+--    portar do webapp) -- por ora aceita QUALQUER arma do catalogo,
+--    nao so as "simples" de verdade. Documentado pra revisar se
+--    precisar filtrar direito depois.
+-- 2) "X ou Y" (sem "Qualquer") -- exige escolha entre as opcoes
+--    exatas separadas por " ou ".
+-- 3) Texto fixo (ex: "Roupas Comuns") -- sem escolha. Se bater com um
+--    item real do ItemsDB, usa ele; senao, vira uma entrada narrativa
+--    (sem peso/custo mecanico).
+local function isChoiceEntry(texto)
+	return texto:find("Qualquer", 1, true) ~= nil or texto:find(" ou ", 1, true) ~= nil
+end
+
+local function getChoiceOptions(texto)
+	if texto:find("Qualquer arma", 1, true) then
+		local opcoes = {}
+		for _, arma in ipairs(ItemsDB.armas) do
+			table.insert(opcoes, arma.nome)
+		end
+		return opcoes
+	end
+	if texto:find(" ou ", 1, true) then
+		local opcoes = {}
+		for parte in (texto .. " ou "):gmatch("(.-) ou ") do
+			table.insert(opcoes, parte)
+		end
+		return opcoes
+	end
+	return { texto }
+end
+
+-- Resolve UMA entrada de equipamento (com a escolha do jogador se for
+-- o caso) num item de inventario { Name, Qty }. Retorna nil + erro se
+-- invalido.
+local function resolveEquipmentEntry(texto, escolhaJogador)
+	if isChoiceEntry(texto) then
+		local opcoes = getChoiceOptions(texto)
+		if not escolhaJogador then
+			return nil, "Precisa escolher uma opção para: " .. texto
+		end
+		local valido = false
+		for _, opt in ipairs(opcoes) do
+			if opt == escolhaJogador then valido = true break end
+		end
+		if not valido then
+			return nil, "Escolha inválida para \"" .. texto .. "\": " .. tostring(escolhaJogador)
+		end
+		return { Name = escolhaJogador, Qty = 1 }
+	end
+	return { Name = texto, Qty = 1 }
+end
+
 function CharacterService.GetBackgrounds()
 	local list = {}
 	for _, bg in ipairs(SystemDB.antecedentes) do
@@ -761,6 +817,11 @@ local function normalizeCharacter(char)
 	ensureArray("History")
 	ensureArray("Organizacoes")
 	ensureArray("VampiroSeresDrenados")
+	ensureArray("GostosEscolhidos")
+	ensureArray("DesgostosEscolhidos")
+	if type(char.TagCooldowns) ~= "table" then
+		char.TagCooldowns = {}
+	end
 	if type(char.VampiroAuraTotalDrenada) ~= "number" then
 		char.VampiroAuraTotalDrenada = 0
 	end
@@ -1199,7 +1260,7 @@ local function applyFormigaQuimera(character, race, fqData)
 	return true, nil
 end
 
-function CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida)
+function CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida, equipmentChoices)
 	local session = getSession(player)
 
 	local name = sanitizeName(rawName)
@@ -1264,6 +1325,31 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 	local skillsFinal, otherSkillsFinal, skillErr = validateSkills(background, chosenSkills, chosenOtherSkills)
 	if skillErr then
 		return { success = false, error = skillErr }
+	end
+
+	-- Resolve o equipamento do antecedente (com escolha quando aplicavel).
+	-- equipmentChoices e uma tabela indexada 1..N alinhada com
+	-- background.equipamento, com a escolha do jogador so nas entradas
+	-- que sao "de escolha" (as demais podem vir nil).
+	local resolvedEquipment = {}
+	if background and background.equipamento then
+		local porNome = {}
+		for i, entradaTexto in ipairs(background.equipamento) do
+			local escolha = equipmentChoices and equipmentChoices[i]
+			local item, eqErr = resolveEquipmentEntry(entradaTexto, escolha)
+			if not item then
+				return { success = false, error = eqErr }
+			end
+			-- Consolida duplicatas (ex: "Qualquer arma simples" 2x e o
+			-- jogador escolheu a mesma arma nas duas -- vira 1 entrada
+			-- com Qty=2, nao duas entradas separadas).
+			if porNome[item.Name] then
+				porNome[item.Name].Qty = porNome[item.Name].Qty + item.Qty
+			else
+				porNome[item.Name] = item
+				table.insert(resolvedEquipment, item)
+			end
+		end
 	end
 
 	if findCharacterByName(session, name) then
@@ -1429,6 +1515,7 @@ function CharacterService.CreateCharacter(player, rawName, raceName, attributesB
 	character.Inclinations = { Positive = positiveList, Negative = negativeList }
 	character.Skills = skillsFinal
 	character.OtherSkills = otherSkillsFinal
+	character.Inventory = resolvedEquipment
 
 	character.Level = 0
 	character.CharacterType = "PLAYER"

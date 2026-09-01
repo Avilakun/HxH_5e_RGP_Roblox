@@ -59,6 +59,13 @@ return {
 		VampiroSeresDrenados = {},
 		VampiroSobreviveuFerimentoFatal = false,
 
+		-- Gostos/Desgostos (Sanidade): tags escolhidas pelo jogador na
+		-- Bio, ver SanityTagsDB.lua/SanityTagService.lua.
+		GostosEscolhidos = {},
+		DesgostosEscolhidos = {},
+		TagCooldowns = {}, -- [tagId] = hora de jogo do ultimo disparo
+		SozinhoDesde = nil, -- hora de jogo (Desgosto "isolamento")
+
 		Nen = {
 			Category = nil,   -- INTENSIFICAÇÃO | TRANSMUTAÇÃO | MATERIALIZAÇÃO | EMISSÃO | MANIPULAÇÃO | ESPECIALIZAÇÃO
 			Affinity = {

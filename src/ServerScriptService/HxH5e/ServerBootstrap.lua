@@ -83,6 +83,12 @@ local SetAlignment = getOrCreateRemote("SetAlignment")
 local SugarAura = getOrCreateRemote("SugarAura")
 local PromoteVampiroCasta = getOrCreateRemote("PromoteVampiroCasta")
 local GetEffectiveStats = getOrCreateRemote("GetEffectiveStats")
+local StartRest = getOrCreateRemote("StartRest")
+local CancelRest = getOrCreateRemote("CancelRest")
+local RestComplete = getOrCreateEvent("RestComplete")
+local GetSanityTagsCatalog = getOrCreateRemote("GetSanityTagsCatalog")
+local SetSanityTags = getOrCreateRemote("SetSanityTags")
+local SanityTagTriggered = getOrCreateEvent("SanityTagTriggered")
 
 --------------------------------------------------
 -- MÓDULOS (agora que os remotes existem)
@@ -96,6 +102,8 @@ local LevelUpService = require(script.Parent:WaitForChild("LevelUpService"))
 local AchievementService = require(script.Parent:WaitForChild("AchievementService"))
 local SkillSystem = require(script.Parent:WaitForChild("SkillSystem"))
 local TimeService = require(script.Parent:WaitForChild("TimeService"))
+local RestService = require(script.Parent:WaitForChild("RestService"))
+local SanityTagService = require(script.Parent:WaitForChild("SanityTagService"))
 local OrganizationService = require(script.Parent:WaitForChild("OrganizationService"))
 local CombatService = require(script.Parent:WaitForChild("CombatService"))
 
@@ -152,6 +160,11 @@ GetOrganizations.OnServerInvoke = function(player)
 	return OrganizationService.GetAllOrganizations()
 end
 
+-- Reforco intencional (pedido do Lucas): o jogador NUNCA pode mudar
+-- a propria reputacao em organizacoes por conta propria -- so sobe/desce
+-- automaticamente (ex: futuro sistema de missao, falhar/recusar).
+-- OrganizationService.AddReputation existe, mas NUNCA foi exposto como
+-- remote publico de proposito -- so chamavel server-side.
 local VALID_ALIGNMENTS = { ["Heróico"] = true, ["Caótico"] = true, ["Neutro"] = true, ["Maligno"] = true }
 SetAlignment.OnServerInvoke = function(player, alignment)
 	if not VALID_ALIGNMENTS[alignment] then
@@ -204,6 +217,47 @@ GetEffectiveStats.OnServerInvoke = function(player)
 	}
 end
 
+StartRest.OnServerInvoke = function(player, tipo, periciaEscolhida)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = RestService.IniciarDescanso(player, character, tipo, periciaEscolhida)
+	return result
+end
+
+CancelRest.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	return RestService.CancelarDescanso(character)
+end
+
+RestService.OnRestComplete = function(player, relatorio)
+	RestComplete:FireClient(player, relatorio)
+end
+
+GetSanityTagsCatalog.OnServerInvoke = function(player)
+	return SanityTagService.GetCatalog()
+end
+
+SetSanityTags.OnServerInvoke = function(player, gostos, desgostos)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = SanityTagService.SetTags(character, gostos, desgostos)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+SanityTagService.OnTagTriggered = function(player, tagId, tipo, valor)
+	SanityTagTriggered:FireClient(player, { tagId = tagId, tipo = tipo, valor = valor })
+end
+
 JoinOrganization.OnServerInvoke = function(player, orgId)
 	local character = CharacterService.GetActiveCharacter(player)
 	if not character then
@@ -234,10 +288,20 @@ local function notificarConquistas(player, result)
 	if not result then return end
 	if result.conquista then
 		AchievementUnlocked:FireClient(player, result.conquista)
+		local character = CharacterService.GetActiveCharacter(player)
+		if character then
+			SanityTagService.OnAchievementUnlocked(player, character)
+		end
 	end
 	if result.conquistas then
 		for _, ach in ipairs(result.conquistas) do
 			AchievementUnlocked:FireClient(player, ach)
+		end
+		if #result.conquistas > 0 then
+			local character = CharacterService.GetActiveCharacter(player)
+			if character then
+				SanityTagService.OnAchievementUnlocked(player, character)
+			end
 		end
 	end
 end
@@ -353,13 +417,48 @@ end)
 CombatService.Setup(CharacterService)
 SkillSystem.Setup(CharacterService)
 TimeService.Start()
+RestService.Setup(CharacterService, CombatService)
+SanityTagService.Setup(CharacterService, CombatService)
+SanityTagService.Start()
 
 --------------------------------------------------
 -- FICHA
 --------------------------------------------------
 
 GetCharacter.OnServerInvoke = function(player)
-	return CharacterService.GetActiveCharacter(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return nil end
+
+	-- Aliados/Inimigos vindos das Inclinacoes escolhidas na criacao
+	-- (pedido do Lucas): "Aliado" (positiva) e "Inimigo"/"Legião de
+	-- Inimigos" (negativas) contam, qualquer opcao. Calculado aqui,
+	-- NUNCA salvo no character persistido -- por isso uma copia rasa,
+	-- pra nao poluir o dado real com um campo derivado.
+	-- ⚠️ LIMITACAO: as inclinacoes com opcoes (ex: "Inimigo" tem
+	-- Fraco/Medio/Forte) so guardam o NOME generico hoje, nao qual
+	-- opcao especifica foi escolhida -- entao aparece so "Inimigo",
+	-- sem o detalhe de qual gravidade.
+	local aliadosInc, inimigosInc = {}, {}
+	for _, inc in ipairs((character.Inclinations and character.Inclinations.Positive) or {}) do
+		if inc.Nome == "Aliado" then
+			table.insert(aliadosInc, inc.Nome)
+		end
+	end
+	for _, inc in ipairs((character.Inclinations and character.Inclinations.Negative) or {}) do
+		if inc.Nome == "Inimigo" or inc.Nome == "Legião de Inimigos" then
+			table.insert(inimigosInc, inc.Nome)
+		end
+	end
+
+	if #aliadosInc == 0 and #inimigosInc == 0 then
+		return character
+	end
+
+	local copia = table.clone(character)
+	copia.Bio = table.clone(character.Bio or {})
+	copia.Bio.AliadosInclinacoes = aliadosInc
+	copia.Bio.InimigosInclinacoes = inimigosInc
+	return copia
 end
 
 GetCharacters.OnServerInvoke = function(player)
@@ -375,8 +474,8 @@ SetActiveCharacter.OnServerInvoke = function(player, characterId)
 	return success
 end
 
-CreateCharacter.OnServerInvoke = function(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida)
-	local result = CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida)
+CreateCharacter.OnServerInvoke = function(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida, equipmentChoices)
+	local result = CharacterService.CreateCharacter(player, rawName, raceName, attributesBuild, backgroundName, backgroundFeature, positiveInclinations, negativeInclinations, chosenSkills, chosenOtherSkills, raceBonusAllocations, attrMethod, fqData, raceCaracteristicaEscolhida, equipmentChoices)
 	if result and result.success then
 		throttledSave(player)
 		applyPassiveMovement(player)
@@ -458,6 +557,9 @@ ActivatePrinciple.OnServerInvoke = function(player, principle)
 	if result.success then
 		if principle ~= "Zetsu" then
 			BuffManager.Start(player, principle, 6)
+		end
+		if principle == "Ten" or principle == "Ren" or principle == "Zetsu" then
+			SanityTagService.OnPrincipleUsed(player, character)
 		end
 		throttledSave(player)
 		notificarConquistas(player, result)

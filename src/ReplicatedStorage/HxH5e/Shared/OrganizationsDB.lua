@@ -24,30 +24,35 @@ OrganizationsDB.Organizacoes = {
 		nome = "Pollos Hermanos",
 		tipo = "Criminosa",
 		titulos = { "Candidato", "Colaborador", "Coordenador", "Gerente", "Sócio" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 	{
 		id = "clube_da_luta",
 		nome = "Clube da Luta",
 		tipo = "Criminosa",
 		titulos = { "Lutador", "Mão de Martelo", "Campeão", "Dono de Cinturão", "Apresentador" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 	{
 		id = "chess",
 		nome = "Chess",
 		tipo = "Maligna",
 		titulos = { "Peão", "Cavaleiro", "Bispo", "Torre", "Rainha/Rei" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 	{
 		id = "corvo_da_noite",
 		nome = "Corvo da Noite",
 		tipo = "Maligna",
 		titulos = { "Amaldiçoado", "Assassino", "Sombra", "Flagelo das Raças", "Corvo da Noite" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 	{
 		id = "instituto_maca",
 		nome = "Instituto MACA",
 		tipo = "Neutra",
 		titulos = { "Aristóteles/Copérnico", "Tesla/Galileu Galilei", "Stephen H./Pasteur", "Darwin/Newton", "Einstein/Freud" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 	{
 		id = "vampiros",
@@ -60,12 +65,14 @@ OrganizationsDB.Organizacoes = {
 		-- (character.VampiroCasta), e um rastreamento PARALELO de
 		-- reputacao/aceitacao social.
 		titulos = { "Recém-Transformado", "Reconhecido", "Respeitado", "Temido", "Aceito por Todos" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 	{
 		id = "associacao_hunter",
 		nome = "Associação Hunter",
 		tipo = "Neutra",
 		titulos = { "Hunter", "Hunter", "Hunter", "Hunter", "Hunter" }, -- sem hierarquia de rank definida pelo Lucas ainda
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 		especial = true, -- NAO entra pelo fluxo normal de JoinOrganization -- so via Licenca Hunter (comprada ou Exame Hunter, pendente)
 	},
 	{
@@ -73,6 +80,7 @@ OrganizationsDB.Organizacoes = {
 		nome = "A Horda",
 		tipo = "Neutra",
 		titulos = { "Batedor", "Esmaga Ossos", "Aniquilador", "Machado Sanguinário", "The Ruller" },
+		tesouro = 10000, -- pedido do Lucas: toda organizacao pre-existente comeca com >=10k
 	},
 }
 

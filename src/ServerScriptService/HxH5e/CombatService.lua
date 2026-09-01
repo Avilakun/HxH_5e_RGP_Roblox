@@ -39,6 +39,7 @@ local NenService = require(script.Parent:WaitForChild("NenService"))
 local AchievementService = require(script.Parent:WaitForChild("AchievementService"))
 local SkillSystem = require(script.Parent:WaitForChild("SkillSystem"))
 local DiceUtils = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("DiceUtils"))
+local SanityTagService = require(script.Parent:WaitForChild("SanityTagService"))
 
 local CharacterService = nil
 local dummyFolder = nil
@@ -316,6 +317,12 @@ local function resolveDummyAttack(dummy, targetPlayer)
 		if conquista then
 			HxH5e.AchievementUnlocked:FireClient(targetPlayer, conquista)
 		end
+		if vit.Current > 0 and vit.Max > 0 and (vit.Current / vit.Max) <= 0.10 then
+			SanityTagService.OnSurvivedLowHP(targetPlayer, character)
+		end
+		if vit.Current <= 0 then
+			SanityTagService.OnDeath(targetPlayer, character)
+		end
 		-- Gancho do requisito "sobreviver a ferimento quase-fatal
 		-- (5%-10% PV) como Lorde Vampiro" (Lorde -> Conde). So conta
 		-- se sobreviveu (Current > 0) dentro dessa faixa especifica.
@@ -335,6 +342,36 @@ end
 
 -- IA do boneco: persegue o jogador mais proximo, ataca com telegraph
 -- quando chega perto. Roda em loop continuo por boneco.
+-- Zona segura de descanso (CasaDescanso.SafeZoneMarker no
+-- Workspace): o boneco NUNCA persegue/detecta jogadores la dentro --
+-- e assim que "fora de combate pra descansar" e garantido pela
+-- propria geografia, sem precisar de um flag separado de "em combate".
+local function isInSafeZone(position)
+	local casa = Workspace:FindFirstChild("CasaDescanso")
+	local marker = casa and casa:FindFirstChild("SafeZoneMarker")
+	if not marker then return false end
+	local rel = marker.CFrame:PointToObjectSpace(position)
+	local half = marker.Size / 2
+	return math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
+end
+CombatService.IsInSafeZone = isInSafeZone
+
+-- Usado pelo SanityTagService pro Desgosto "Perigo constante": true se
+-- algum boneco esta com o telegraph de ataque ativo contra esse jogador.
+function CombatService.IsBeingChased(player)
+	local plrChar = player.Character
+	if not plrChar or not plrChar.PrimaryPart then return false end
+	for dummy, data in pairs(dummies) do
+		if data.attacking then
+			local dist = (data.root.Position - plrChar.PrimaryPart.Position).Magnitude
+			if dist <= ATTACK_RANGE + 3 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function startDummyAI(dummy)
 	task.spawn(function()
 		while dummy.Parent do
@@ -344,7 +381,7 @@ local function startDummyAI(dummy)
 				local nearestPlayer, bestDist = nil, math.huge
 				for _, plr in ipairs(Players:GetPlayers()) do
 					local plrChar = plr.Character
-					if plrChar and plrChar.PrimaryPart then
+					if plrChar and plrChar.PrimaryPart and not isInSafeZone(plrChar.PrimaryPart.Position) then
 						local dist = (plrChar.PrimaryPart.Position - root.Position).Magnitude
 						if dist < bestDist then
 							nearestPlayer = plr
@@ -677,6 +714,7 @@ function CombatService.BasicAttack(player)
 		if rAch.isNew then
 			result.conquista = rAch.achievement
 		end
+		SanityTagService.OnCombatVictory(player, character)
 		data.respawning = true
 		data.attacking = false
 		for _, part in ipairs(nearest:GetDescendants()) do
