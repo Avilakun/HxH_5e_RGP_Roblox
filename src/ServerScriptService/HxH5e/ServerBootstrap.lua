@@ -59,8 +59,7 @@ local BuyItem = getOrCreateRemote("BuyItem")
 local SellItem = getOrCreateRemote("SellItem")
 local GetItemsCatalog = getOrCreateRemote("GetItemsCatalog")
 local RollAttributePool = getOrCreateRemote("RollAttributePool")
-local GetStandardArray = getOrCreateRemote("GetStandardArray")
-local GetNextPendingLevel = getOrCreateRemote("GetNextPendingLevel")
+local GetStandardArray = getOrCreateRemote("GetStandardArray")local GetNextPendingLevel = getOrCreateRemote("GetNextPendingLevel")
 local RollHitDie = getOrCreateRemote("RollHitDie")
 local GetMediaHitDie = getOrCreateRemote("GetMediaHitDie")
 local ConfirmLevelUp = getOrCreateRemote("ConfirmLevelUp")
@@ -75,18 +74,20 @@ local GetSkillsInfo = getOrCreateRemote("GetSkillsInfo")
 local BuffTick = getOrCreateEvent("BuffTick")
 local EditHatsu = getOrCreateRemote("EditHatsu")
 local AchievementUnlocked = getOrCreateEvent("AchievementUnlocked")
-local GetAchievementsCatalog = getOrCreateRemote("GetAchievementsCatalog")
-local GetOrganizations = getOrCreateRemote("GetOrganizations")
+local GetAchievementsCatalog = getOrCreateRemote("GetAchievementsCatalog")local GetOrganizations = getOrCreateRemote("GetOrganizations")
 local JoinOrganization = getOrCreateRemote("JoinOrganization")
 local CreateGuild = getOrCreateRemote("CreateGuild")
-local SetAlignment = getOrCreateRemote("SetAlignment")
-local SugarAura = getOrCreateRemote("SugarAura")
+local SetAlignment = getOrCreateRemote("SetAlignment")local SugarAura = getOrCreateRemote("SugarAura")
 local PromoteVampiroCasta = getOrCreateRemote("PromoteVampiroCasta")
-local GetEffectiveStats = getOrCreateRemote("GetEffectiveStats")
-local StartRest = getOrCreateRemote("StartRest")
+local GetEffectiveStats = getOrCreateRemote("GetEffectiveStats")local StartRest = getOrCreateRemote("StartRest")
 local CancelRest = getOrCreateRemote("CancelRest")
 local RestComplete = getOrCreateEvent("RestComplete")
-local GetSanityTagsCatalog = getOrCreateRemote("GetSanityTagsCatalog")
+local SanitySurgeEvent = getOrCreateEvent("SanitySurgeEvent")
+local DebugSetSanidade = getOrCreateRemote("DebugSetSanidade")
+local GetCharacterUI = getOrCreateRemote("GetCharacterUI")
+local SetFocoDeCaca = getOrCreateRemote("SetFocoDeCaca")
+local UsarAcaoProtagonista = getOrCreateRemote("UsarAcaoProtagonista")
+local ResetarAcaoProtagonista = getOrCreateRemote("ResetarAcaoProtagonista")local GetSanityTagsCatalog = getOrCreateRemote("GetSanityTagsCatalog")
 local SetSanityTags = getOrCreateRemote("SetSanityTags")
 local SanityTagTriggered = getOrCreateEvent("SanityTagTriggered")
 
@@ -103,6 +104,9 @@ local AchievementService = require(script.Parent:WaitForChild("AchievementServic
 local SkillSystem = require(script.Parent:WaitForChild("SkillSystem"))
 local TimeService = require(script.Parent:WaitForChild("TimeService"))
 local RestService = require(script.Parent:WaitForChild("RestService"))
+local SanitySurgeService = require(script.Parent:WaitForChild("SanitySurgeService"))
+local FichaUIAdapter = require(script.Parent:WaitForChild("FichaUIAdapter"))
+local FichaUITemplateBuilder = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("FichaUITemplateBuilder"))
 local SanityTagService = require(script.Parent:WaitForChild("SanityTagService"))
 local OrganizationService = require(script.Parent:WaitForChild("OrganizationService"))
 local CombatService = require(script.Parent:WaitForChild("CombatService"))
@@ -152,6 +156,8 @@ end)
 -- dado de vida e escolher atributo-ou-aura quando aplicavel).
 --------------------------------------------------
 
+-- Le result.conquista (uma so) e/ou result.conquistas (lista) e dispara
+-- o evento de badge pro jogador certo, pra cada conquista NOVA.
 GetAchievementsCatalog.OnServerInvoke = function(player)
 	return AchievementService.GetCatalog()
 end
@@ -198,7 +204,6 @@ PromoteVampiroCasta.OnServerInvoke = function(player, force)
 	end
 	return result
 end
-
 -- Expoe os valores EFETIVOS (apos condicoes tipo Exaustao) pro cliente
 -- poder mostrar na Ficha/HUD -- ex: deslocamento zerado, HP maximo
 -- reduzido, sem precisar recalcular a mesma logica no cliente.
@@ -237,7 +242,6 @@ end
 RestService.OnRestComplete = function(player, relatorio)
 	RestComplete:FireClient(player, relatorio)
 end
-
 GetSanityTagsCatalog.OnServerInvoke = function(player)
 	return SanityTagService.GetCatalog()
 end
@@ -256,6 +260,73 @@ end
 
 SanityTagService.OnTagTriggered = function(player, tagId, tipo, valor)
 	SanityTagTriggered:FireClient(player, { tagId = tagId, tipo = tipo, valor = valor })
+end
+SanitySurgeService.OnSurgeEvent = function(player, dados)
+	SanitySurgeEvent:FireClient(player, dados)
+end
+-- REMOTE DE DEBUG TEMPORARIO -- so pra testar os limiares de Surto
+-- sem esperar o cooldown natural dos Desgostos. Remover antes de
+-- lancar de verdade.
+DebugSetSanidade.OnServerInvoke = function(player, valor)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	if character.Vitals and character.Vitals.Sanidade then
+		character.Vitals.Sanidade.Current = valor
+		SanitySurgeService.CheckThresholds(player, character)
+	end
+	return { success = true, surtosAtivos = character.SurtosAtivos }
+end
+
+GetCharacterUI.OnServerInvoke = function(player)
+	FichaUIAdapter.WaitReady(5)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return nil
+	end
+	local ok, ficha = pcall(FichaUIAdapter.Build, character, player)
+	if not ok then
+		warn("[HxH5e] FichaUIAdapter.Build falhou: " .. tostring(ficha))
+		return nil
+	end
+	return ficha
+end
+
+SetFocoDeCaca.OnServerInvoke = function(player, characterId, texto)
+	local result = CharacterService.SetFocoDeCaca(player, characterId, texto)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+UsarAcaoProtagonista.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.UsarAcaoProtagonista(character)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+-- ⚠️ Reset "de mestre" sem checagem de permissao ainda (nao ha um
+-- sistema de mestre/DM dedicado no jogo hoje) -- qualquer jogador pode
+-- chamar isso por enquanto. Documentado pra quando o Lucas quiser
+-- adicionar uma checagem de permissao de verdade.
+ResetarAcaoProtagonista.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.ResetarAcaoProtagonista(character)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
 end
 
 JoinOrganization.OnServerInvoke = function(player, orgId)
@@ -282,8 +353,6 @@ CreateGuild.OnServerInvoke = function(player, nome, tipo, tipoEconomico, titulos
 	return result
 end
 
--- Le result.conquista (uma so) e/ou result.conquistas (lista) e dispara
--- o evento de badge pro jogador certo, pra cada conquista NOVA.
 local function notificarConquistas(player, result)
 	if not result then return end
 	if result.conquista then
@@ -420,6 +489,10 @@ TimeService.Start()
 RestService.Setup(CharacterService, CombatService)
 SanityTagService.Setup(CharacterService, CombatService)
 SanityTagService.Start()
+SanitySurgeService.Setup(CharacterService, CombatService)
+SanitySurgeService.Start()
+FichaUIAdapter.Setup(CharacterService, SkillSystem, OrganizationService)
+FichaUITemplateBuilder.Build() -- no-op se ja existir (edicoes no Explorer sao preservadas)
 
 --------------------------------------------------
 -- FICHA
@@ -553,6 +626,9 @@ ActivatePrinciple.OnServerInvoke = function(player, principle)
 	if not character then
 		return { success = false, error = "Nenhum personagem ativo." }
 	end
+	if SanitySurgeService.BloqueiaHatsu(character) then
+		return { success = false, error = "Você está incapaz de usar Nen agora (efeito de Surto de Sanidade em andamento)." }
+	end
 	local result = NenService.ActivatePrinciple(player, character, principle)
 	if result.success then
 		if principle ~= "Zetsu" then
@@ -561,6 +637,7 @@ ActivatePrinciple.OnServerInvoke = function(player, principle)
 		if principle == "Ten" or principle == "Ren" or principle == "Zetsu" then
 			SanityTagService.OnPrincipleUsed(player, character)
 		end
+		SanitySurgeService.RegistrarAcaoPrincipal(character)
 		throttledSave(player)
 		notificarConquistas(player, result)
 	end

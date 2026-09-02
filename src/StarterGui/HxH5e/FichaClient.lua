@@ -102,6 +102,13 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 local openButton = makeButton(screenGui, "AbrirFichaButton", "ABRIR FICHA",
 	UDim2.new(1, -170, 1, -60), UDim2.new(0, 150, 0, 42))
 openButton.AnchorPoint = Vector2.new(1, 1)
+-- ⚠️ Escondido de proposito: duplicava o botao "FICHA (M)" do HUD novo
+-- (FichaUIClient.lua). Pedido do Design (brief FichaUI): "Dois botoes
+-- ABRIR FICHA -- remover o duplicado". A janela antiga (FichaWindow)
+-- e o resto do fluxo de criacao de personagem continuam intactos --
+-- so o BOTAO fica invisivel (o toggle continua existindo no codigo
+-- caso precise ser reativado).
+openButton.Visible = false
 
 -- ================= Toast (notificacoes empilhadas) =================
 -- Caixa fica invisivel ate a primeira mensagem. Cada nova mensagem entra
@@ -1606,7 +1613,10 @@ local function refreshList()
 				closeWindow(listFrame)
 				refreshFicha()
 				setFichaTab("FICHA")
-				openWindow(fichaFrame)
+				-- openWindow(fichaFrame) -- REMOVIDO: abria a ficha ANTIGA por
+				-- cima da nova (FichaUIClient.lua), duplicando a visualizacao
+				-- (pedido do Design, brief FichaUI). refreshFicha() continua
+				-- rodando pra manter o estado interno atualizado.
 			end
 		end)
 
@@ -2962,7 +2972,7 @@ resultContinueButton.Activated:Connect(function()
 	closeWindow(resultFrame)
 	refreshFicha()
 	setFichaTab("FICHA")
-	openWindow(fichaFrame)
+	-- openWindow(fichaFrame) -- REMOVIDO: mesma razao do outro ponto acima.
 end)
 
 for _, name in ipairs(FUND_NAMES) do

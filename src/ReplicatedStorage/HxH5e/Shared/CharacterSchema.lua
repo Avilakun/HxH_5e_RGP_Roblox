@@ -66,6 +66,12 @@ return {
 		TagCooldowns = {}, -- [tagId] = hora de jogo do ultimo disparo
 		SozinhoDesde = nil, -- hora de jogo (Desgosto "isolamento")
 
+		-- Surto de Sanidade (4 niveis por limiar de %), ver
+		-- SanitySurgeDB.lua/SanitySurgeService.lua.
+		SurtosAtivos = { curta = nil, longa = nil, leve = nil, pesado = nil },
+		SurtoJaTriggado = { curta = false, longa = false, leve = false, pesado = false },
+		UltimaAcaoPrincipalHoras = nil,
+
 		Nen = {
 			Category = nil,   -- INTENSIFICAÇÃO | TRANSMUTAÇÃO | MATERIALIZAÇÃO | EMISSÃO | MANIPULAÇÃO | ESPECIALIZAÇÃO
 			Affinity = {
@@ -115,6 +121,28 @@ return {
 			Inimigos = "",
 			Aliados = "",
 		},
+
+		-- Foco de Caça e Ação Protagonista (livro: "Todo Hunter Precisa
+		-- estar caçando algo"). O foco e o objetivo grandioso do
+		-- personagem (tipo de Hunter que quer ser, ou inimigo especifico
+		-- adquirido na aventura); permanece ate ser cumprido. A Ação
+		-- Protagonista funciona como a Inspiracao do D&D -- 1x por
+		-- sessao, só quando ligada ao Foco de Caça -- pra: (1) forcar o
+		-- inimigo a rerolar com desvantagem, (2) o proprio jogador
+		-- rerolar com vantagem, ou (3) aplicar 3d6 pra diminuir a
+		-- rolagem do inimigo ou aumentar a rolagem anterior. O efeito em
+		-- si e resolvido manualmente pelo mestre/jogador (nao ha um
+		-- "replay" automatico da ultima rolagem no sistema) -- o remote
+		-- so controla se o recurso esta disponivel.
+		FocoDeCaca = "",
+		AcaoProtagonistaDisponivel = true,
+		-- Nen Post-Mortem: se o jogador USA a Ação Protagonista numa
+		-- rodada e MESMO ASSIM falha causando/permitindo a propria
+		-- morte, o Nen "desperta" postumamente com um voto/condicao
+		-- narrativa. Puramente narrativo, sem mecanica numerica -- so
+		-- registra que aconteceu e a descricao que o jogador deu.
+		NenPostMortem = nil, -- { Voto = "texto descrito pelo jogador", Data = os.time() }
+
 		History = {},
 		ImageUrl = nil,
 		LastMod = nil,

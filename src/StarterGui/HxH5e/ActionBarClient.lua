@@ -18,6 +18,7 @@ local AchievementUnlocked = HxH5e:WaitForChild("AchievementUnlocked")
 local AttemptReaction = HxH5e:WaitForChild("AttemptReaction")
 local EnemyTelegraph = HxH5e:WaitForChild("EnemyTelegraph")
 local EnemyAttackResult = HxH5e:WaitForChild("EnemyAttackResult")
+local HotkeyButtonFX = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("HotkeyButtonFX"))
 
 local playerGui = player:WaitForChild("PlayerGui")
 local guiAntigo = playerGui:FindFirstChild("HxH5eActionBar")
@@ -125,6 +126,13 @@ local auraBar = makeFrame(auraBarBg, "AuraBar",
 	UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(80, 140, 255))
 local auraLabel = makeLabel(barsFrame, "AuraLabel", "Aura: -",
 	UDim2.new(0, 12, 0, 42), UDim2.new(1, -24, 0, 14), 12)
+
+-- ⚠️ Escondido de proposito: duplicava exatamente as barras de PV/Aura
+-- que ja aparecem no HUD novo (FichaUIClient.lua). Pedido do Design
+-- (brief FichaUI): "HUD aparecendo por tras da ficha, duplicado -- so
+-- existe UM HUD". O resto deste script (acoes, buffs, hatsu menu)
+-- continua ativo -- so as barras passivas de vitais somem.
+barsFrame.Visible = false
 
 -- ================= Chips de buff =================
 
@@ -288,8 +296,13 @@ hatsuMenu.Visible = false
 table.insert(hudElements, barsFrame)
 table.insert(hudElements, buffsFrame)
 table.insert(hudElements, logFrame)
-table.insert(hudElements, actionsFrame)
 table.insert(hudElements, hatsuMenu)
+-- ActionsFrame (barra de texto ATACAR[F]/BLOQUEAR[Q]/etc) removida
+-- de proposito -- pedido do Lucas, substituida pelos botoes de icone
+-- que ele esta montando na ScreenGui separada. Nao entra em
+-- hudElements de proposito, pra nunca mais reaparecer nem com o
+-- toggle geral do HUD.
+actionsFrame.Visible = false
 
 
 -- ================= Lógica =================
@@ -537,14 +550,29 @@ end)
 -- WASD de proposito, pra dar pra reagir rapido sem tirar a mao do
 -- movimento.
 local UserInputService = game:GetService("UserInputService")
+-- Icones de Atacar/Bloquear/Esquivar sao preenchidos mais abaixo
+-- (task.spawn que espera a ScreenGui do Lucas aparecer) -- declarados
+-- aqui em cima pra as teclas de atalho tambem conseguirem piscar o
+-- icone certo, nao so o clique do mouse.
+local atacarIconRef, bloquearIconRef, esquivarIconRef = nil, nil, nil
+
 local KEYBINDS = {
-	[Enum.KeyCode.F] = doAttack,
+	[Enum.KeyCode.F] = function()
+		if atacarIconRef then HotkeyButtonFX.Blink(atacarIconRef) end
+		doAttack()
+	end,
 	[Enum.KeyCode.R] = function() usePrinciple("Ren") end,
 	[Enum.KeyCode.T] = function() usePrinciple("Ten") end,
 	[Enum.KeyCode.G] = function() usePrinciple("Zetsu") end,
 	[Enum.KeyCode.H] = toggleHatsuMenu,
-	[Enum.KeyCode.Q] = doBlock,
-	[Enum.KeyCode.E] = doDodge,
+	[Enum.KeyCode.Q] = function()
+		if bloquearIconRef then HotkeyButtonFX.Blink(bloquearIconRef) end
+		doBlock()
+	end,
+	[Enum.KeyCode.E] = function()
+		if esquivarIconRef then HotkeyButtonFX.Blink(esquivarIconRef) end
+		doDodge()
+	end,
 }
 
 UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
@@ -554,5 +582,49 @@ UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
 	local handler = KEYBINDS[input.KeyCode]
 	if handler then
 		handler()
+	end
+end)
+
+-- ================= Botoes de icone (ScreenGui separada, montada pelo Lucas) =================
+-- Os 3 botoes (Ataque-C-a-C / Bloquear / Esquivar) vivem numa
+-- ScreenGui a parte, editada visualmente no Explorer (posicao, icone,
+-- tamanho). Aqui so conectamos cada um na MESMA funcao que ja
+-- respondia ao botao de texto antigo e a tecla -- clicar no icone faz
+-- exatamente a mesma coisa que apertar F/Q/E. Cada clique tambem
+-- "pisca" o botao (HotkeyButtonFX.Blink) -- mesmo efeito que os
+-- futuros botoes de TEN/REN/KEN/GYO etc vao usar (exceto EN e ZETSU
+-- por enquanto, pedido do Lucas).
+task.spawn(function()
+	local iconGui = player.PlayerGui:WaitForChild("ScreenGui", 10)
+	if not iconGui then
+		warn("[HxH5e] ScreenGui dos botoes de icone nao encontrada -- hotkeys de icone nao conectadas.")
+		return
+	end
+	local atacarIcon = iconGui:WaitForChild("Ataque-C-a-C", 5)
+	local bloquearIcon = iconGui:WaitForChild("Bloquear", 5)
+	local esquivarIcon = iconGui:WaitForChild("Esquivar", 5)
+	-- Preenche as referencias compartilhadas com as teclas de atalho
+	-- (ver KEYBINDS acima) -- assim Q/F/E tambem piscam o icone certo,
+	-- nao so o clique do mouse.
+	atacarIconRef = atacarIcon
+	bloquearIconRef = bloquearIcon
+	esquivarIconRef = esquivarIcon
+	if atacarIcon then
+		atacarIcon.Activated:Connect(function()
+			HotkeyButtonFX.Blink(atacarIcon)
+			doAttack()
+		end)
+	end
+	if bloquearIcon then
+		bloquearIcon.Activated:Connect(function()
+			HotkeyButtonFX.Blink(bloquearIcon)
+			doBlock()
+		end)
+	end
+	if esquivarIcon then
+		esquivarIcon.Activated:Connect(function()
+			HotkeyButtonFX.Blink(esquivarIcon)
+			doDodge()
+		end)
 	end
 end)

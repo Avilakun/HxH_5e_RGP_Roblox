@@ -27,6 +27,7 @@ local Players = game:GetService("Players")
 
 local SanityTagsDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("SanityTagsDB"))
 local TimeService = require(script.Parent:WaitForChild("TimeService"))
+local SanitySurgeService = require(script.Parent:WaitForChild("SanitySurgeService"))
 
 local CharacterService = nil
 local CombatService = nil
@@ -68,6 +69,7 @@ local function aplicarGosto(player, character, tagId)
 	if character.Vitals and character.Vitals.Sanidade then
 		local san = character.Vitals.Sanidade
 		san.Current = math.min(san.Max, (san.Current or 0) + recuperado)
+		SanitySurgeService.CheckThresholds(player, character)
 	end
 	CharacterService.SavePlayer(player)
 	if SanityTagService.OnTagTriggered then
@@ -81,6 +83,7 @@ local function aplicarDesgosto(player, character, tagId)
 	if character.Vitals and character.Vitals.Sanidade then
 		local san = character.Vitals.Sanidade
 		san.Current = math.max(0, (san.Current or 0) - DESGOSTO_ESTRESSE)
+		SanitySurgeService.CheckThresholds(player, character)
 	end
 	CharacterService.SavePlayer(player)
 	if SanityTagService.OnTagTriggered then

@@ -212,16 +212,33 @@ function NenService.TrainPrinciple(character, principle)
 
 	if FUNDAMENTALS[principle] then
 		local current = d[principle] or 0
-		if current >= 3 then
-			return { success = false, error = "Maestria já alcançada em " .. principle .. "." }
+		if current < 3 then
+			if NenService.CalcPNDisponivel(character) < 1 then
+				return { success = false, error = "Sem P.N disponível." }
+			end
+			d[principle] = current + 1
+			character.UpdatedAt = os.time()
+			local conquistas = AchievementService.CheckAllLiveAchievements(character)
+			return { success = true, message = principle .. " agora é nível " .. tostring(d[principle]) .. ".", conquistas = conquistas }
+		end
+		-- Aprimoramento pos-Maestria (livro "Atualizacoes Principios e
+		-- Tecnicas"): apos a Maestria (grau 3), cada P.N investido a
+		-- mais escala o efeito continuamente, ate o maximo de 10 P.N
+		-- aplicaveis no total (ou seja, +7 alem dos 3 da Maestria). Os
+		-- calculos ja existiam (NenService.CalcTenRD/CalcRenBonus/
+		-- CalcZetsuBonus), so faltava permitir continuar investindo.
+		local pnKey = principle .. "_pn"
+		local pnAtual = d[pnKey] or 0
+		if pnAtual >= 7 then
+			return { success = false, error = principle .. " já está no máximo de Aprimoramento (10 P.N no total, 3 da Maestria + 7 investidos)." }
 		end
 		if NenService.CalcPNDisponivel(character) < 1 then
 			return { success = false, error = "Sem P.N disponível." }
 		end
-		d[principle] = current + 1
+		d[pnKey] = pnAtual + 1
 		character.UpdatedAt = os.time()
 		local conquistas = AchievementService.CheckAllLiveAchievements(character)
-		return { success = true, message = principle .. " agora é nível " .. tostring(d[principle]) .. ".", conquistas = conquistas }
+		return { success = true, message = principle .. " aprimorado: +" .. tostring(d[pnKey]) .. " P.N além da Maestria.", conquistas = conquistas }
 	end
 
 	for _, key in ipairs(ADVANCED_KEYS) do

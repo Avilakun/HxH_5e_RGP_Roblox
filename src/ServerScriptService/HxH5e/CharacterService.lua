@@ -1568,6 +1568,54 @@ local BIO_FIELDS = {
 }
 local BIO_FIELD_MAX_LEN = 2000
 
+-- ================= Foco de Caça e Ação Protagonista =================
+local FOCO_CACA_MAX_LEN = 500
+
+function CharacterService.SetFocoDeCaca(player, characterId, texto)
+	if type(texto) ~= "string" then
+		return { success = false, error = "Valor inválido." }
+	end
+	if #texto > FOCO_CACA_MAX_LEN then
+		return { success = false, error = "Texto muito longo (máximo " .. FOCO_CACA_MAX_LEN .. " caracteres)." }
+	end
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	character.FocoDeCaca = texto
+	character.UpdatedAt = os.time()
+	return { success = true, focoDeCaca = texto }
+end
+
+-- So pode usar se: (1) o recurso estiver disponivel e (2) ja tiver um
+-- Foco de Caça definido (a mecanica so vale quando ligada a ele, ver
+-- CharacterSchema). O EFEITO em si (rerolar com vantagem/desvantagem
+-- ou aplicar 3d6) e resolvido manualmente pelo mestre/jogador -- este
+-- remote so controla a disponibilidade do recurso.
+function CharacterService.UsarAcaoProtagonista(character)
+	if character.FocoDeCaca == nil or character.FocoDeCaca == "" then
+		return { success = false, error = "Defina um Foco de Caça antes de usar a Ação Protagonista -- ela só vale quando ligada a ele." }
+	end
+	if not character.AcaoProtagonistaDisponivel then
+		return { success = false, error = "Ação Protagonista já usada. Só volta a ficar disponível no início da próxima sessão." }
+	end
+	character.AcaoProtagonistaDisponivel = false
+	character.UpdatedAt = os.time()
+	return {
+		success = true,
+		message = "Ação Protagonista usada. Escolha um efeito com o mestre: (1) inimigo rerola com desvantagem, (2) você rerola com vantagem, ou (3) aplique 3d6 pra diminuir a rolagem do inimigo ou aumentar a sua rolagem anterior.",
+	}
+end
+
+-- Reset manual (mestre), pro inicio de cada nova sessao -- o sistema
+-- nao tem um conceito automatico de "sessao de jogo".
+function CharacterService.ResetarAcaoProtagonista(character)
+	character.AcaoProtagonistaDisponivel = true
+	character.UpdatedAt = os.time()
+	return { success = true }
+end
+
 function CharacterService.SetBioField(player, characterId, field, value)
 	if not BIO_FIELDS[field] then
 		return { success = false, error = "Campo de biografia desconhecido: " .. tostring(field) }
@@ -1783,6 +1831,41 @@ function CharacterService.GetEffectiveDeslocamento(character)
 	end
 	return base * mods.deslocFactor
 
+end
+
+-- ================= Dano recebido (central, generico) =================
+-- Usado por QUALQUER fonte de dano contra um personagem -- ataque de
+-- inimigo/monstro, condicao, Hatsu hostil, etc. A MESMA funcao serve
+-- pra jogador atacado por boneco, monstro, ou (futuramente) PvP --
+-- pedido do Lucas: "as mecanicas de acerto e dano devem ser
+-- EXATAMENTE iguais para inimigos e personagens".
+--
+-- RD (Reducao de Dano, ex.: TEN) e calculada por quem chama e passada
+-- ja pronta -- CharacterService nao conhece NenService de proposito,
+-- pra evitar dependencia circular (CombatService, que ja usa
+-- NenService, calcula a RD e passa aqui).
+--
+-- NAO dispara hooks de conquista/SanityTag/morte -- isso fica a cargo
+-- de quem chama (ver CombatService), que ja tem os requires certos.
+-- Aqui so o numero muda, puro e testavel.
+function CharacterService.ApplyDamage(character, dano, rd)
+	dano = math.max(0, dano or 0)
+	local danoBloqueado = math.min(dano, rd or 0)
+	local danoFinal = dano - danoBloqueado
+	local vit = character.Vitals and character.Vitals.HP
+	if not vit then
+		return { danoFinal = 0, danoBloqueado = danoBloqueado, hpAtual = 0, hpMax = 0, morreu = false }
+	end
+	local hpMaxEfetivo = CharacterService.GetEffectiveMaxHP(character)
+	local hpAntes = math.min(vit.Current, hpMaxEfetivo)
+	vit.Current = math.max(0, hpAntes - danoFinal)
+	return {
+		danoFinal = danoFinal,
+		danoBloqueado = danoBloqueado,
+		hpAtual = vit.Current,
+		hpMax = hpMaxEfetivo,
+		morreu = vit.Current <= 0,
+	}
 end
 
 -- ================= Loja: comprar/vender itens (ver ItemsDB.lua) =================
