@@ -15,6 +15,7 @@ local Theme = require(script.Parent.FichaUITheme)
 local Icons = require(script.Parent.FichaUIIcons)
 local W = require(script.Parent.FichaUIWidgets)
 local Data = require(script.Parent.FichaUIData)
+local HxH5e = ReplicatedStorage:WaitForChild("HxH5e")
 
 local player = Players.LocalPlayer
 local ficha, doServidor = Data.carregar()
@@ -740,6 +741,13 @@ do
 		end
 		atualizar()
 		box:GetPropertyChangedSignal("Text"):Connect(atualizar)
+		-- Salva de verdade no servidor ao perder o foco -- antes esses
+		-- campos so ficavam em ficha.Bio (memoria local do cliente),
+		-- perdidos ao fechar/recarregar a ficha. SetBioField ja existia
+		-- no backend, so nunca tinha sido chamado daqui.
+		box.FocusLost:Connect(function()
+			HxH5e.SetBioField:InvokeServer(ficha.Id, chave, box.Text)
+		end)
 	end
 
 	local row1 = W.frame(perfilCol, UDim2.new(1, 0, 0, 92), "Row1")
@@ -752,9 +760,110 @@ do
 	campoTexto(r1a, "PERSONALIDADE", "Personality", 92, 1)
 	campoTexto(r1b, "OBJETIVOS", "Goals", 92, 1)
 
+	-- Foco de Caça + Ação Protagonista: diferente dos campos de bio
+	-- acima (que ainda so ficam em memoria local, SetBioField nunca e
+	-- chamado), este daqui SALVA de verdade -- o backend ja existe e
+	-- ja foi testado (SetFocoDeCaca/UsarAcaoProtagonista). A Acao
+	-- Protagonista so pode ser usada se houver um Foco definido (regra
+	-- do servidor, checada de novo aqui so pra UI nao deixar clicar
+	-- errado).
+	local focoCard = W.card(perfilCol, UDim2.new(1, 0, 0, 170), "FocoCaca")
+	focoCard.LayoutOrder = 2
+	W.pad(focoCard, 11)
+	local focoCol = W.frame(focoCard, UDim2.new(1, 0, 1, 0), "Col")
+	W.list(focoCol, 6)
+
+	local focoTop = W.frame(focoCol, UDim2.new(1, 0, 0, 13), "Top")
+	W.list(focoTop, 6, Enum.FillDirection.Horizontal)
+	local focoLbl = W.label(focoTop, "FOCO DE CAÇA", 10)
+	focoLbl.Size = UDim2.new(1, -90, 0, 12)
+	local focoContador = W.mono(focoTop, "", 10, false)
+	focoContador.TextColor3 = Theme.Muted
+	focoContador.Size = UDim2.fromOffset(84, 12)
+	focoContador.TextXAlignment = Enum.TextXAlignment.Right
+
+	local focoBox = Instance.new("TextBox")
+	focoBox.Name = "Input"
+	focoBox.Size = UDim2.new(1, 0, 0, 46)
+	focoBox.BackgroundTransparency = 1
+	focoBox.Font = Theme.FontBody
+	focoBox.TextSize = 13
+	focoBox.TextWrapped = true
+	focoBox.TextXAlignment = Enum.TextXAlignment.Left
+	focoBox.TextYAlignment = Enum.TextYAlignment.Top
+	focoBox.MultiLine = true
+	focoBox.ClearTextOnFocus = false
+	focoBox.PlaceholderText = "O que motiva seu personagem nessa caçada/missão? (ex: vingar minha família, provar meu valor...)"
+	focoBox.Text = ficha.FocoDeCaca or ""
+	Theme.register(focoBox, "TextColor3")
+	focoBox.Parent = focoCol
+
+	local focoAcaoRow = W.frame(focoCol, UDim2.new(1, 0, 0, 30), "AcaoRow")
+	W.list(focoAcaoRow, 10, Enum.FillDirection.Horizontal).VerticalAlignment = Enum.VerticalAlignment.Center
+	local focoBtn = Instance.new("TextButton")
+	focoBtn.Size = UDim2.fromOffset(220, 30)
+	focoBtn.Font = Theme.FontTitle
+	focoBtn.TextSize = 12
+	focoBtn.AutoButtonColor = false
+	Theme.register(focoBtn, "BackgroundColor3", 0.1)
+	focoBtn.BackgroundTransparency = 0
+	W.corner(focoBtn, 7)
+	W.stroke(focoBtn, 0.3)
+	focoBtn.Parent = focoAcaoRow
+
+	local focoStatus = W.mono(focoCol, "", 11, false)
+	focoStatus.Size = UDim2.new(1, 0, 0, 32)
+	focoStatus.TextXAlignment = Enum.TextXAlignment.Left
+	focoStatus.TextYAlignment = Enum.TextYAlignment.Top
+	focoStatus.TextWrapped = true
+
+	local acaoDisponivel = ficha.AcaoProtagonistaDisponivel
+
+	local function atualizarFocoUI()
+		if #focoBox.Text > 500 then focoBox.Text = string.sub(focoBox.Text, 1, 500) end
+		focoContador.Text = string.format("%d / 500", #focoBox.Text)
+		local temFoco = focoBox.Text ~= ""
+		if not temFoco then
+			focoBtn.Text = "DEFINA UM FOCO PRIMEIRO"
+			focoStatus.Text = ""
+		elseif acaoDisponivel then
+			focoBtn.Text = "USAR AÇÃO PROTAGONISTA"
+			focoStatus.Text = "Disponível"
+			Theme.register(focoStatus, "TextColor3")
+		else
+			focoBtn.Text = "AÇÃO JÁ USADA"
+			focoStatus.Text = "Volta no início da próxima sessão"
+			focoStatus.TextColor3 = Theme.Muted
+		end
+	end
+	atualizarFocoUI()
+
+	focoBox:GetPropertyChangedSignal("Text"):Connect(atualizarFocoUI)
+	focoBox.FocusLost:Connect(function()
+		ficha.FocoDeCaca = focoBox.Text
+		HxH5e.SetFocoDeCaca:InvokeServer(ficha.Id, focoBox.Text)
+	end)
+
+	focoBtn.Activated:Connect(function()
+		if focoBox.Text == "" or not acaoDisponivel then return end
+		local result = HxH5e.UsarAcaoProtagonista:InvokeServer()
+		if result and result.success then
+			acaoDisponivel = false
+		end
+		atualizarFocoUI()
+		if result and (result.message or result.error) then
+			-- Mensagem tem as 3 opcoes de efeito pro jogador escolher
+			-- com o mestre -- comprida de proposito, por isso vai no
+			-- proprio status desse card (nao um toast pequeno), pra
+			-- dar tempo de ler com calma.
+			focoStatus.Text = tostring(result.message or result.error)
+			focoStatus.TextWrapped = true
+		end
+	end)
+
 	-- Gostos e desgostos: tags do SanityTagsDB, não texto livre
 	local tags = W.card(perfilCol, UDim2.new(1, 0, 0, 150), "Tags")
-	tags.LayoutOrder = 2
+	tags.LayoutOrder = 3
 	W.pad(tags, 12)
 	local tagsCol = W.frame(tags, UDim2.new(1, 0, 1, 0), "Col")
 	W.list(tagsCol, 9)

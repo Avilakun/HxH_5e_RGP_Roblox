@@ -87,7 +87,12 @@ local DebugSetSanidade = getOrCreateRemote("DebugSetSanidade")
 local GetCharacterUI = getOrCreateRemote("GetCharacterUI")
 local SetFocoDeCaca = getOrCreateRemote("SetFocoDeCaca")
 local UsarAcaoProtagonista = getOrCreateRemote("UsarAcaoProtagonista")
-local ResetarAcaoProtagonista = getOrCreateRemote("ResetarAcaoProtagonista")local GetSanityTagsCatalog = getOrCreateRemote("GetSanityTagsCatalog")
+local ResetarAcaoProtagonista = getOrCreateRemote("ResetarAcaoProtagonista")
+local EquiparArmadura = getOrCreateRemote("EquiparArmadura")
+local DesequiparArmadura = getOrCreateRemote("DesequiparArmadura")
+local EquiparEscudo = getOrCreateRemote("EquiparEscudo")
+local DesequiparEscudo = getOrCreateRemote("DesequiparEscudo")
+local SetHotkeySlot = getOrCreateRemote("SetHotkeySlot")local GetSanityTagsCatalog = getOrCreateRemote("GetSanityTagsCatalog")
 local SetSanityTags = getOrCreateRemote("SetSanityTags")
 local SanityTagTriggered = getOrCreateEvent("SanityTagTriggered")
 
@@ -323,6 +328,66 @@ ResetarAcaoProtagonista.OnServerInvoke = function(player)
 		return { success = false, error = "Nenhum personagem ativo." }
 	end
 	local result = CharacterService.ResetarAcaoProtagonista(character)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+EquiparArmadura.OnServerInvoke = function(player, nomeItem)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.EquiparArmadura(player, character.Id, nomeItem)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+DesequiparArmadura.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.DesequiparArmadura(player, character.Id)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+EquiparEscudo.OnServerInvoke = function(player, nomeItem)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.EquiparEscudo(player, character.Id, nomeItem)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+DesequiparEscudo.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.DesequiparEscudo(player, character.Id)
+	if result.success then
+		throttledSave(player)
+	end
+	return result
+end
+
+SetHotkeySlot.OnServerInvoke = function(player, slotIndex, principioNomeOuFalse)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local result = CharacterService.SetHotkeySlot(player, character.Id, slotIndex, principioNomeOuFalse)
 	if result.success then
 		throttledSave(player)
 	end

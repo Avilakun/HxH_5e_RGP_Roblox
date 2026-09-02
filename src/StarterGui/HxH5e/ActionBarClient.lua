@@ -19,6 +19,8 @@ local AttemptReaction = HxH5e:WaitForChild("AttemptReaction")
 local EnemyTelegraph = HxH5e:WaitForChild("EnemyTelegraph")
 local EnemyAttackResult = HxH5e:WaitForChild("EnemyAttackResult")
 local HotkeyButtonFX = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("HotkeyButtonFX"))
+local Theme = require(script.Parent:WaitForChild("FichaUITheme"))
+local FichaUIData = require(script.Parent:WaitForChild("FichaUIData"))
 
 local playerGui = player:WaitForChild("PlayerGui")
 local guiAntigo = playerGui:FindFirstChild("HxH5eActionBar")
@@ -307,21 +309,96 @@ actionsFrame.Visible = false
 
 -- ================= Lógica =================
 
+-- ================= Vitais novos do Lucas (PV/Sanidade/Reacoes/Armadura) =================
+-- Icones proprios (PNG com linhas brancas), vivem na mesma ScreenGui
+-- separada dos botoes de acao. A moldura (ImageColor3) e o
+-- preenchimento (Frame por cima, na area da "trilha" vazia do
+-- desenho) seguem a cor da categoria de Nen -- pedido do Lucas, pra
+-- testar a sincronia com o tema.
+--
+-- ⚠️ Armadura: ainda sem regra definida (nao existe um recurso
+-- "armadura atual/maxima" no sistema hoje) -- moldura ja tinge com o
+-- tema, mas o preenchimento fica parado em 0% ate o Lucas confirmar
+-- o que deve aparecer ali (CA? RDM? um recurso novo?).
+local VitalFills = {}
+
+task.spawn(function()
+	local iconGui = player.PlayerGui:WaitForChild("ScreenGui", 10)
+	if not iconGui then
+		warn("[HxH5e] ScreenGui dos icones de vitais nao encontrada.")
+		return
+	end
+
+	local okFicha, ficha = pcall(FichaUIData.carregar)
+	if okFicha and ficha then
+		Theme.setCategory(ficha.Categoria)
+	end
+
+	-- Posicao/tamanho da "trilha" dentro do desenho, estimados
+	-- visualmente (icone ocupa a esquerda, trilha fica a direita,
+	-- centralizada verticalmente) -- ajustavel no Explorer depois se
+	-- nao bater 100% com o PNG.
+	local function montarFill(nomeBotao)
+		local btn = iconGui:FindFirstChild(nomeBotao)
+		if not btn then
+			warn("[HxH5e] Botao de vital nao encontrado: " .. nomeBotao)
+			return nil
+		end
+		Theme.register(btn, "ImageColor3")
+
+		local trilho = Instance.new("Frame")
+		trilho.Name = "Trilho"
+		trilho.Size = UDim2.new(0.6, 0, 0.16, 0)
+		trilho.Position = UDim2.new(0.32, 0, 0.42, 0)
+		trilho.BackgroundTransparency = 1
+		trilho.ClipsDescendants = true
+		trilho.Parent = btn
+
+		local fill = Instance.new("Frame")
+		fill.Name = "Fill"
+		fill.Size = UDim2.new(0, 0, 1, 0)
+		fill.BorderSizePixel = 0
+		fill.Parent = trilho
+		Theme.register(fill, "BackgroundColor3")
+
+		return fill
+	end
+
+	VitalFills.PV = montarFill("PV_Bar")
+	VitalFills.Sanidade = montarFill("Sanidade_Bar")
+	VitalFills.Reacoes = montarFill("Reacoes_Bar")
+	montarFill("Armoradura_Bar") -- so tinge a moldura por enquanto, sem preenchimento definido
+end)
+
+local function updateVitalFill(fill, atual, max)
+	if not fill then return end
+	local pct = (max and max > 0) and math.clamp(atual / max, 0, 1) or 0
+	fill.Size = UDim2.new(pct, 0, 1, 0)
+end
+
 local function refreshBars()
 	local character = GetCharacter:InvokeServer()
 	if character and character.Vitals then
 		local hp = character.Vitals.HP
 		local aura = character.Vitals.Aura
+		local sanidade = character.Vitals.Sanidade
 		if hp and hp.Max and hp.Max > 0 then
 			local pct = math.clamp(hp.Current / hp.Max, 0, 1)
 			hpBar.Size = UDim2.new(pct, 0, 1, 0)
 			hpLabel.Text = "PV: " .. tostring(math.floor(hp.Current)) .. "/" .. tostring(math.floor(hp.Max))
+			updateVitalFill(VitalFills.PV, hp.Current, hp.Max)
 		end
 		if aura and aura.Max and aura.Max > 0 then
 			local pct = math.clamp(aura.Current / aura.Max, 0, 1)
 			auraBar.Size = UDim2.new(pct, 0, 1, 0)
 			auraLabel.Text = "Aura: " .. tostring(math.floor(aura.Current)) .. "/" .. tostring(math.floor(aura.Max))
 		end
+		if sanidade and sanidade.Max and sanidade.Max > 0 then
+			updateVitalFill(VitalFills.Sanidade, sanidade.Current, sanidade.Max)
+		end
+		local reacoesMax = character.Vitals.Reacoes or 0
+		local reacoesAtual = reacoesMax - (character.ReacoesGastas or 0)
+		updateVitalFill(VitalFills.Reacoes, reacoesAtual, reacoesMax)
 	else
 		hpLabel.Text = "PV: -"
 		auraLabel.Text = "Aura: -"
@@ -554,7 +631,7 @@ local UserInputService = game:GetService("UserInputService")
 -- (task.spawn que espera a ScreenGui do Lucas aparecer) -- declarados
 -- aqui em cima pra as teclas de atalho tambem conseguirem piscar o
 -- icone certo, nao so o clique do mouse.
-local atacarIconRef, bloquearIconRef, esquivarIconRef = nil, nil, nil
+local atacarIconRef, bloquearIconRef, esquivarIconRef, tenIconRef = nil, nil, nil, nil
 
 local KEYBINDS = {
 	[Enum.KeyCode.F] = function()
@@ -562,7 +639,10 @@ local KEYBINDS = {
 		doAttack()
 	end,
 	[Enum.KeyCode.R] = function() usePrinciple("Ren") end,
-	[Enum.KeyCode.T] = function() usePrinciple("Ten") end,
+	[Enum.KeyCode.T] = function()
+		if tenIconRef then HotkeyButtonFX.Blink(tenIconRef) end
+		usePrinciple("Ten")
+	end,
 	[Enum.KeyCode.G] = function() usePrinciple("Zetsu") end,
 	[Enum.KeyCode.H] = toggleHatsuMenu,
 	[Enum.KeyCode.Q] = function()
@@ -627,4 +707,205 @@ task.spawn(function()
 			doDodge()
 		end)
 	end
+
+	-- ================= Botoes dos principios de Nen (Ten + avancados) =================
+	-- Pedido do Lucas: os botoes so ficam "ativos" (cor normal, clique
+	-- funciona de verdade) quando o personagem ja treinou/desbloqueou
+	-- aquele principio na aba NEN -- bloqueados ficam esmaecidos e o
+	-- clique so mostra a mensagem de erro que o servidor ja devolve
+	-- ("Você ainda não treinou Ren." / "Você ainda não desbloqueou Ken.").
+	-- EN e ZETSU ficam de fora por enquanto (combinado com o Lucas).
+	local PRINCIPIOS = { "Ten", "Ren", "Gyo", "Shu", "Ken", "Ko", "Ryu", "Inp" }
+	local principioIcones = {}
+	for _, nome in ipairs(PRINCIPIOS) do
+		local icon = iconGui:FindFirstChild(nome)
+		principioIcones[nome] = icon
+		if nome == "Ten" then
+			tenIconRef = icon
+		end
+		-- Os 8 icones NAO ficam soltos na tela -- somem por padrao e so
+		-- aparecem organizados em circulo quando o menu radial abre
+		-- (ver mais abaixo). O clique neles, quando visiveis dentro do
+		-- radial, atribui aquele principio ao slot que estiver sendo
+		-- configurado no momento.
+		if icon then
+			icon.Visible = false
+		end
+	end
+
+	-- ================= Menu radial de hotkeys (4 slots configuraveis) =================
+	-- Clique ESQUERDO num slot preenchido: ativa o principio (igual
+	-- clicar direto no icone). Clique num slot VAZIO, ou clique
+	-- DIREITO em qualquer slot: abre o radial pra escolher/trocar o
+	-- que fica ali. So principios ja desbloqueados sao clicaveis
+	-- dentro do radial (os travados ficam esmaecidos e sem acao).
+	local NUM_SLOTS = 4
+	local RAIO_RADIAL = 130
+	local CENTRO_X, CENTRO_Y = 0.5, 0.42
+
+	local slotButtons = {}
+	local slotLabels = {}
+	local slotAtribuido = {} -- [slotIndex] = nome do principio ou false
+
+	for i = 1, NUM_SLOTS do
+		local slot = iconGui:FindFirstChild("Slot" .. i)
+		slotButtons[i] = slot
+		if slot then
+			slotLabels[i] = slot:FindFirstChild("Sigla")
+		end
+	end
+
+	local backdrop = Instance.new("TextButton")
+	backdrop.Name = "RadialBackdrop"
+	backdrop.Text = ""
+	backdrop.AutoButtonColor = false
+	backdrop.Size = UDim2.new(1, 0, 1, 0)
+	backdrop.BackgroundColor3 = Color3.new(0, 0, 0)
+	backdrop.BackgroundTransparency = 0.45
+	backdrop.Visible = false
+	backdrop.ZIndex = 100
+	backdrop.Parent = iconGui
+
+	local slotSendoEditado = nil
+	local radialAbertoViaShift = false -- modo "ativar na hora" (sem slot)
+
+	local function fecharRadial()
+		backdrop.Visible = false
+		for _, nome in ipairs(PRINCIPIOS) do
+			local icon = principioIcones[nome]
+			if icon then icon.Visible = false end
+		end
+		slotSendoEditado = nil
+		radialAbertoViaShift = false
+	end
+
+	local function abrirRadial(slotIndex)
+		slotSendoEditado = slotIndex
+		backdrop.Visible = true
+		local total = #PRINCIPIOS
+		for i, nome in ipairs(PRINCIPIOS) do
+			local icon = principioIcones[nome]
+			if icon then
+				local angulo = (i - 1) / total * math.pi * 2 - math.pi / 2
+				local x = math.cos(angulo) * RAIO_RADIAL
+				local y = math.sin(angulo) * RAIO_RADIAL
+				icon.Position = UDim2.new(CENTRO_X, x - 33, CENTRO_Y, y - 33)
+				icon.ZIndex = 101
+				icon.Visible = true
+			end
+		end
+	end
+
+	backdrop.Activated:Connect(fecharRadial)
+
+	local function atualizarSlotVisual(slotIndex)
+		local lbl = slotLabels[slotIndex]
+		if not lbl then return end
+		local nome = slotAtribuido[slotIndex]
+		lbl.Text = nome and nome or "+"
+	end
+
+	for i = 1, NUM_SLOTS do
+		local slot = slotButtons[i]
+		if slot then
+			slot.Activated:Connect(function()
+				local nome = slotAtribuido[i]
+				if nome then
+					HotkeyButtonFX.Blink(slot)
+					usePrinciple(nome)
+				else
+					abrirRadial(i)
+				end
+			end)
+			slot.MouseButton2Click:Connect(function()
+				abrirRadial(i)
+			end)
+		end
+	end
+
+	for _, nome in ipairs(PRINCIPIOS) do
+		local icon = principioIcones[nome]
+		if icon then
+			icon.Activated:Connect(function()
+				if slotSendoEditado then
+					-- Radial aberto pra configurar um SLOT: atribui o
+					-- principio clicado aquele slot e persiste.
+					local slotIndex = slotSendoEditado
+					local result = HxH5e.SetHotkeySlot:InvokeServer(slotIndex, nome)
+					if result and result.success then
+						slotAtribuido[slotIndex] = nome
+						atualizarSlotVisual(slotIndex)
+					end
+					fecharRadial()
+				elseif radialAbertoViaShift then
+					-- Radial aberto via SHIFT: ativa o principio na
+					-- hora, sem mexer em nenhum slot salvo.
+					HotkeyButtonFX.Blink(icon)
+					usePrinciple(nome)
+					fecharRadial()
+				end
+			end)
+		end
+	end
+
+	-- ================= Atalho SHIFT: abre/fecha o radial pra ativar na hora =================
+	-- Pedido do Lucas: segurando (na pratica, apertando -- alternando a
+	-- cada toque) Shift, o radial aparece com os principios
+	-- desbloqueados; apertar de novo fecha. Diferente de clicar num
+	-- slot -- aqui nao atribui nada, so ativa o principio escolhido
+	-- direto. ⚠️ Shift tambem e a tecla nativa do Shift Lock do
+	-- Roblox (camera travada no mouse) -- o Lucas testou e nao notou
+	-- efeito nenhum do Shift Lock no jogo atual, entao ficou combinado
+	-- usar Shift mesmo pro radial sem se preocupar com conflito.
+	UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+		if gameProcessedEvent then return end
+		if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+			if radialAbertoViaShift or slotSendoEditado then
+				fecharRadial()
+			else
+				radialAbertoViaShift = true
+				abrirRadial(nil)
+			end
+		end
+	end)
+
+	-- Carrega os slots ja salvos do personagem
+	do
+		local ok, ficha = pcall(FichaUIData.carregar)
+		if ok and ficha and ficha.HotkeySlots then
+			for i = 1, NUM_SLOTS do
+				local valor = ficha.HotkeySlots[i]
+				slotAtribuido[i] = (valor and valor ~= false) and valor or nil
+				atualizarSlotVisual(i)
+			end
+		end
+	end
+
+	-- Consulta a ficha (mesmo dado que a aba NEN usa) periodicamente e
+	-- esmaece o icone de qualquer principio ainda nao disponivel.
+	-- FUNDAMENTAIS (Ten/Ren): "disponivel" = ja treinado pelo menos
+	-- nivel 1. AVANCADOS (Gyo/Shu/Ken/Ko/Ryu/Inp): "disponivel" =
+	-- desbloqueado (bool).
+	task.spawn(function()
+		while true do
+			local ok, ficha = pcall(FichaUIData.carregar)
+			if ok and ficha and ficha.Nen then
+				local desbloqueado = {}
+				for _, f in ipairs(ficha.Nen.Fundamentais or {}) do
+					desbloqueado[f.sigla] = (f.nivel or 0) >= 1
+				end
+				for _, a in ipairs(ficha.Nen.Avancados or {}) do
+					desbloqueado[a.sigla] = a.desbloqueado == true
+				end
+				for nome, icon in pairs(principioIcones) do
+					if icon then
+						local siglaBusca = if nome == "Inp" then "IN" else string.upper(nome)
+						local ok2 = desbloqueado[siglaBusca]
+						icon.ImageTransparency = ok2 and 0 or 0.7
+					end
+				end
+			end
+			task.wait(2)
+		end
+	end)
 end)

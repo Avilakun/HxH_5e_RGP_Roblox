@@ -96,6 +96,7 @@ end
 function FichaUIAdapter.Build(character, player)
 	local ficha = {}
 
+	ficha.Id = character.Id
 	ficha.Nome = character.Name or "?"
 	ficha.Jogador = player and player.Name or "?"
 	ficha.Nivel = character.Level or 0
@@ -242,6 +243,10 @@ function FichaUIAdapter.Build(character, player)
 	-- adicionado. Ver CharacterSchema.lua pra contexto completo.
 	ficha.FocoDeCaca = character.FocoDeCaca or ""
 	ficha.AcaoProtagonistaDisponivel = character.AcaoProtagonistaDisponivel ~= false
+
+	-- Slots de hotkey (menu radial) -- array de nomes de principio
+	-- (ou false = vazio), na mesma ordem/tamanho salvos no character.
+	ficha.HotkeySlots = character.HotkeySlots or {}
 
 	-- ================= ORGANIZACOES =================
 	ficha.Organizacoes = {}

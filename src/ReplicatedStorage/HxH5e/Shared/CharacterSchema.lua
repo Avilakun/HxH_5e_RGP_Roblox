@@ -136,6 +136,23 @@ return {
 		-- so controla se o recurso esta disponivel.
 		FocoDeCaca = "",
 		AcaoProtagonistaDisponivel = true,
+
+		-- Armadura equipada (torso) e escudo (mao secundaria).
+		-- Quando ativa, a CA da armadura SOBREPOE 10+CON (nao soma);
+		-- escudos SOMAM por cima disso, sao cumulativos. Durabilidade
+		-- maxima = caBase do item (ver ItemsDB.armaduras), reduz 1 por
+		-- golpe sofrido (2 se dano rajada/explosivo), exceto enquanto
+		-- o personagem estiver com TEN/KEN/RYU ativo. Ao chegar em 0,
+		-- a armadura quebra: volta pro CA base 10+CON ate ser trocada.
+		ArmaduraEquipada = nil,
+		EscudoEquipado = nil,
+
+		-- Slots de hotkey configuraveis (menu radial): cada posicao
+		-- guarda o nome de um principio de Nen ja desbloqueado, ou
+		-- `false` se vazio -- NUNCA nil no meio do array (isso quebra
+		-- o operador # do Lua e a serializacao do DataStore). Comeca
+		-- com 4 slots -- o Lucas pode pedir mais depois.
+		HotkeySlots = { false, false, false, false },
 		-- Nen Post-Mortem: se o jogador USA a Ação Protagonista numa
 		-- rodada e MESMO ASSIM falha causando/permitindo a propria
 		-- morte, o Nen "desperta" postumamente com um voto/condicao

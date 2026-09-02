@@ -1182,6 +1182,12 @@ local function initVitals(character, race)
 	end
 	character.Vitals.Aura = { Current = auraInicial, Max = auraInicial }
 	character.Vitals.Sanidade = { Current = 100, Max = 100 }
+	-- RDM (Reducao de Dano Mental) = INT + nivel (Manual de Hatsus).
+	-- Segue o mesmo padrao ja usado pros outros vitais aqui em cima
+	-- (modCon, modSab = MODIFICADOR do atributo, nao o valor bruto) --
+	-- faz mais sentido pra um numero de "reducao" tambem, comparavel
+	-- aos valores de RD de armadura (1 a 5).
+	character.Vitals.RDM = attrMod(character.Attributes.INT.value) + character.Level
 	character.Vitals.CA = 10 + modCon
 	character.Vitals.Reacoes = 7 + modSab
 	character.Vitals.Deslocamento = (race and RACE_DESLOCAMENTO[race.nome]) or 9
@@ -1818,9 +1824,275 @@ function CharacterService.GetEffectiveMaxHP(character)
 	return math.floor(base * mods.hpMaxFactor)
 end
 
+-- Remove quantidade de um item do inventario, decrementando Qty ou
+-- apagando a entrada se chegar a 0. Extraida do mesmo padrao ja usado
+-- em SellItem, que nunca tinha virado uma funcao reutilizavel.
+function CharacterService.RemoveFromInventory(character, itemNome, quantidade)
+	quantidade = quantidade or 1
+	character.Inventory = character.Inventory or {}
+	for i, invItem in ipairs(character.Inventory) do
+		if invItem.Name == itemNome then
+			invItem.Qty = invItem.Qty - quantidade
+			if invItem.Qty <= 0 then
+				table.remove(character.Inventory, i)
+			end
+			return true
+		end
+	end
+	return false
+end
+
+-- ================= Armadura equipada (durabilidade, CA sobreposta) =================
+-- Doc do Lucas ("Durabilidade de Equipamentos de Protecao"): a
+-- durabilidade maxima de uma armadura e o CA BASE dela (sem contar o
+-- bonus de DES). Reduz 1 por golpe sofrido (2 se "rajada"/
+-- "explosivo"), EXCETO enquanto o personagem estiver com TEN, KEN ou
+-- RYU ativo. Ao chegar em 0, a armadura "quebra": simplesmente para
+-- de contar (GetArmaduraAtiva ja ignora durabilidade <= 0), volta pro
+-- CA base 10+CON, sem sistema de reparo ainda.
+--
+-- ⚠️ Escudos tem regra de quebra DIFERENTE no livro ("apenas sao
+-- danificados por dano balistico, explosivo, por armas de cerco e por
+-- golpe mirado") -- como "golpe mirado" nao existe como mecanica no
+-- jogo ainda, escudos NAO quebram por enquanto (ficam sempre ativos
+-- enquanto equipados). Documentado, nao esquecido.
+
+function CharacterService.EquiparArmadura(player, characterId, nomeItem)
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	local item = ItemsDB.FindItem(nomeItem)
+	if not item or not item.caBase then
+		return { success = false, error = "Item não é uma armadura equipável." }
+	end
+	local temNoInventario = false
+	for _, it in ipairs(character.Inventory or {}) do
+		if it.Name == nomeItem then temNoInventario = true break end
+	end
+	if not temNoInventario then
+		return { success = false, error = "Você não tem esse item na mochila." }
+	end
+	if item.forNecessaria then
+		local forVal = (character.Attributes and character.Attributes.FOR and character.Attributes.FOR.value) or 10
+		if forVal < item.forNecessaria then
+			return { success = false, error = "Requer FOR " .. item.forNecessaria .. " para vestir (você tem " .. forVal .. ")." }
+		end
+	end
+	-- Desequipa a armadura anterior (se houver), devolvendo pra mochila
+	if character.ArmaduraEquipada then
+		table.insert(character.Inventory, { Name = character.ArmaduraEquipada.Nome, Qty = 1 })
+	end
+	CharacterService.RemoveFromInventory(character, nomeItem, 1)
+	character.ArmaduraEquipada = { Nome = nomeItem, Durabilidade = item.caBase }
+	character.UpdatedAt = os.time()
+	return { success = true, message = nomeItem .. " equipada (durabilidade " .. item.caBase .. ").", ca = CharacterService.GetEffectiveCA(character) }
+end
+
+function CharacterService.DesequiparArmadura(player, characterId)
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	if not character.ArmaduraEquipada then
+		return { success = false, error = "Nenhuma armadura equipada." }
+	end
+	table.insert(character.Inventory, { Name = character.ArmaduraEquipada.Nome, Qty = 1 })
+	character.ArmaduraEquipada = nil
+	character.UpdatedAt = os.time()
+	return { success = true, ca = CharacterService.GetEffectiveCA(character) }
+end
+
+function CharacterService.EquiparEscudo(player, characterId, nomeItem)
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	local item = ItemsDB.FindItem(nomeItem)
+	if not item or not item.ehEscudo then
+		return { success = false, error = "Item não é um escudo." }
+	end
+	local temNoInventario = false
+	for _, it in ipairs(character.Inventory or {}) do
+		if it.Name == nomeItem then temNoInventario = true break end
+	end
+	if not temNoInventario then
+		return { success = false, error = "Você não tem esse item na mochila." }
+	end
+	if item.forNecessaria then
+		local forVal = (character.Attributes and character.Attributes.FOR and character.Attributes.FOR.value) or 10
+		if forVal < item.forNecessaria then
+			return { success = false, error = "Requer FOR " .. item.forNecessaria .. " para impunhar (você tem " .. forVal .. ")." }
+		end
+	end
+	if character.EscudoEquipado then
+		table.insert(character.Inventory, { Name = character.EscudoEquipado.Nome, Qty = 1 })
+	end
+	CharacterService.RemoveFromInventory(character, nomeItem, 1)
+	-- Durabilidade do escudo: o livro nao da um numero explicito de
+	-- "golpes que aguenta" como fez pra armadura (so diz que golpe
+	-- de precisao/impacto normal nao desgasta, so balistico/
+	-- explosivo/cerco/golpe mirado). Sem numero explicito, usei o
+	-- mesmo padrao ja estabelecido pra armadura (durabilidade =
+	-- caBase sem DES) -- aqui e o caBonus do escudo (1/3/5), unico
+	-- numero fixo que o item tem.
+	character.EscudoEquipado = { Nome = nomeItem, Durabilidade = item.caBonus or 1 }
+	character.UpdatedAt = os.time()
+	return { success = true, message = nomeItem .. " impunhado.", ca = CharacterService.GetEffectiveCA(character) }
+end
+
+function CharacterService.DesequiparEscudo(player, characterId)
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	if not character.EscudoEquipado then
+		return { success = false, error = "Nenhum escudo equipado." }
+	end
+	table.insert(character.Inventory, { Name = character.EscudoEquipado.Nome, Qty = 1 })
+	character.EscudoEquipado = nil
+	character.UpdatedAt = os.time()
+	return { success = true, ca = CharacterService.GetEffectiveCA(character) }
+end
+
+-- Chamada pelo CombatService quando o personagem SOFRE um golpe.
+-- protegidoPorTecnica: true se TEN/KEN/RYU estava ativo (calculado
+-- por quem chama -- CombatService ja usa BuffManager, CharacterService
+-- nao conhece isso de proposito). tipoGolpe: "rajada"/"explosivo"
+-- reduzem 2, qualquer outro reduz 1.
+function CharacterService.DesgastarArmadura(character, protegidoPorTecnica, tipoGolpe)
+	if protegidoPorTecnica then
+		return
+	end
+	local eq = character.ArmaduraEquipada
+	if not eq or (eq.Durabilidade or 0) <= 0 then
+		return
+	end
+	local perda = (tipoGolpe == "rajada" or tipoGolpe == "explosivo") and 2 or 1
+	eq.Durabilidade = math.max(0, eq.Durabilidade - perda)
+end
+
+-- ================= Slots de hotkey (menu radial) =================
+-- Principios permitidos nos slots: os 6 avancados + os 2 fundamentais
+-- que fazem sentido como "ligar/desligar" rapido (Ten/Ren). EN e
+-- ZETSU ficam de fora por enquanto (pedido do Lucas). Nao valida se
+-- esta desbloqueado AQUI de proposito -- um jogador pode configurar o
+-- slot ANTES de desbloquear (fica so visualmente esmaecido ate la,
+-- ver ActionBarClient.lua), sem erro.
+local PRINCIPIOS_VALIDOS_PARA_SLOT = {
+	Ten = true, Ren = true, Gyo = true, Shu = true,
+	Ken = true, Ko = true, Ryu = true, Inp = true,
+}
+
+function CharacterService.SetHotkeySlot(player, characterId, slotIndex, principioNomeOuFalse)
+	local session = getSession(player)
+	local character = findCharacterById(session, characterId)
+	if not character then
+		return { success = false, error = "Personagem não encontrado." }
+	end
+	if type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex ~= math.floor(slotIndex) then
+		return { success = false, error = "Slot inválido." }
+	end
+	character.HotkeySlots = character.HotkeySlots or {}
+	-- Preenche buracos com `false` se o slot pedido for alem do
+	-- tamanho atual (array sem nil no meio, ver CharacterSchema).
+	for i = 1, slotIndex do
+		if character.HotkeySlots[i] == nil then
+			character.HotkeySlots[i] = false
+		end
+	end
+	if principioNomeOuFalse == false or principioNomeOuFalse == nil then
+		character.HotkeySlots[slotIndex] = false
+	else
+		if not PRINCIPIOS_VALIDOS_PARA_SLOT[principioNomeOuFalse] then
+			return { success = false, error = "Princípio inválido para hotkey." }
+		end
+		character.HotkeySlots[slotIndex] = principioNomeOuFalse
+	end
+	character.UpdatedAt = os.time()
+	return { success = true, slots = character.HotkeySlots }
+end
+
+-- Retorna a definicao do item de armadura equipada (ItemsDB.armaduras),
+-- ou nil se nao tiver nada equipado ou a armadura ja tiver quebrado
+-- (durabilidade <= 0 -- volta pro CA base 10+CON automaticamente).
+function CharacterService.GetArmaduraAtiva(character)
+	local eq = character.ArmaduraEquipada
+	if not eq or (eq.Durabilidade or 0) <= 0 then
+		return nil
+	end
+	return ItemsDB.FindItem(eq.Nome)
+end
+
+function CharacterService.GetEscudoAtivo(character)
+	local eq = character.EscudoEquipado
+	if not eq then
+		return nil
+	end
+	-- eq.Durabilidade pode ser nil em escudos equipados ANTES dessa
+	-- funcionalidade existir -- nesse caso trata como sempre ativo
+	-- (nao penaliza quem ja tinha equipado), so ignora se o campo
+	-- EXISTIR e estiver <= 0 (escudo quebrado de verdade).
+	if eq.Durabilidade ~= nil and eq.Durabilidade <= 0 then
+		return nil
+	end
+	return ItemsDB.FindItem(eq.Nome)
+end
+
+-- Chamada pelo CombatService quando o personagem SOFRE um golpe.
+-- Diferente da armadura (que desgasta com qualquer golpe, exceto
+-- protegido por tecnica), o escudo SO desgasta com dano Balistico ou
+-- golpe de propriedade "explosivo" -- regra do livro ("apenas sao
+-- danificados por dano balistico, explosivo, por armas de cerco e
+-- por golpe mirado"). "Armas de cerco" e "golpe mirado" nao existem
+-- como mecanica no jogo ainda, entao ficam de fora por enquanto --
+-- documentado, nao esquecido.
+function CharacterService.DesgastarEscudo(character, tipoDano, propriedadeGolpe)
+	local eq = character.EscudoEquipado
+	if not eq or (eq.Durabilidade and eq.Durabilidade <= 0) then
+		return
+	end
+	local desgasta = (tipoDano == "Balístico") or (propriedadeGolpe == "explosivo")
+	if not desgasta then
+		return
+	end
+	-- Se nunca teve Durabilidade setada (escudo antigo), inicializa
+	-- com o caBonus do item na primeira vez que precisar desgastar.
+	if eq.Durabilidade == nil then
+		local item = ItemsDB.FindItem(eq.Nome)
+		eq.Durabilidade = (item and item.caBonus) or 1
+	end
+	eq.Durabilidade = math.max(0, eq.Durabilidade - 1)
+end
+
+-- CA efetiva: se tiver armadura de torso ativa, o CA dela SOBREPOE
+-- 10+CON (nao soma) -- regra confirmada pelo Lucas. Escudo (mao
+-- secundaria) SOMA por cima disso, e e cumulativo com a armadura.
 function CharacterService.GetEffectiveCA(character)
 	local mods = CharacterService.GetConditionModifiers(character)
-	return ((character.Vitals and character.Vitals.CA) or 10) + mods.caPenalty
+
+	local caBase
+	local armadura = CharacterService.GetArmaduraAtiva(character)
+	if armadura then
+		local desMod = math.floor((((character.Attributes and character.Attributes.DES and character.Attributes.DES.value) or 10) - 10) / 2)
+		if armadura.caDesMax then
+			desMod = math.min(math.max(desMod, 0), armadura.caDesMax)
+		end
+		caBase = armadura.caBase + desMod
+	else
+		caBase = (character.Vitals and character.Vitals.CA) or 10
+	end
+
+	local escudo = CharacterService.GetEscudoAtivo(character)
+	if escudo and escudo.caBonus then
+		caBase = caBase + escudo.caBonus
+	end
+
+	return caBase + mods.caPenalty
 end
 
 function CharacterService.GetEffectiveDeslocamento(character)

@@ -411,14 +411,54 @@ end
 -- gancho Vampiro, save). Extraida pra ser reusada tanto no fluxo
 -- normal quanto no de Assumir Lugar (que pode precisar aplicar em
 -- ATE DOIS personagens no caso de divisao de dano).
-local function aplicarDanoEHooks(character, player, dano, tipoDano)
+-- Personagem "protegido por tecnica" (doc do Lucas sobre durabilidade
+-- de armadura): TEN, KEN ou RYU ativos no momento do golpe evitam o
+-- desgaste. Usa o mesmo BuffManager que ja controla os buffs
+-- temporarios de 6s de Ren/Ten/etc (ver NenService.ActivatePrinciple).
+local function protegidoPorTecnica(player)
+	if not player then return false end
+	return BuffManager.Has(player, "Ten") or BuffManager.Has(player, "Ken") or BuffManager.Has(player, "Ryu")
+end
+
+local function aplicarDanoEHooks(character, player, dano, tipoDano, propriedadeGolpe)
 	if dano <= 0 or not (character.Vitals and character.Vitals.HP) then
 		return { danoFinal = 0, danoBloqueado = 0, hpAtual = 0, hpMax = 0, morreu = false }
 	end
+
+	-- Resistencia Balistica da armadura: reduz o dano pela metade
+	-- ANTES da RD (regra do livro: "Resistencia... reduz em 50% o
+	-- tipo especifico de dano descrito").
+	local armadura = CharacterService.GetArmaduraAtiva(character)
+	if armadura and armadura.resistenciaTipos and tipoDano then
+		for _, tipo in ipairs(armadura.resistenciaTipos) do
+			if tipo == tipoDano then
+				dano = math.floor(dano / 2)
+				break
+			end
+		end
+	end
+
 	local rd = 0
 	if tipoDano == "Corte" or tipoDano == "Impacto" or tipoDano == "Explosão" then
 		rd = NenService.CalcTenRD(character)
+		if armadura and armadura.rd and armadura.rdTipos then
+			for _, tipo in ipairs(armadura.rdTipos) do
+				if tipo == tipoDano then
+					rd = rd + armadura.rd
+					break
+				end
+			end
+		end
 	end
+
+	-- Desgasta a armadura equipada (se houver e o golpe realmente
+	-- acertou) -- ver CharacterService.DesgastarArmadura pra regra
+	-- completa (nao desgasta se TEN/KEN/RYU estiver ativo).
+	CharacterService.DesgastarArmadura(character, protegidoPorTecnica(player), propriedadeGolpe)
+	-- Escudo desgasta com regra DIFERENTE (so Balistico/explosivo,
+	-- independente de TEN/KEN/RYU) -- ver CharacterService.DesgastarEscudo.
+	CharacterService.DesgastarEscudo(character, tipoDano, propriedadeGolpe)
+
 	local resultado = CharacterService.ApplyDamage(character, dano, rd)
 
 	local conquista = AchievementService.CheckPVBaixo(character)
@@ -476,12 +516,12 @@ function CombatService.ResolveAttackVsCharacter(atacanteStats, targetCharacter, 
 		local msg
 
 		if r.resultado == "menor" then
-			aplicarDanoEHooks(interceptor.character, interceptor.player, danoBase, tipoDano)
+			aplicarDanoEHooks(interceptor.character, interceptor.player, danoBase, tipoDano, atacanteStats.propriedade)
 			msg = (interceptor.character.Name or "Alguém") .. " assumiu o lugar e tomou o golpe cheio (rolou " .. r.total .. " vs ataque " .. attackTotal .. ")."
 		elseif r.resultado == "igual" then
 			local metade = math.floor(danoBase / 2)
-			aplicarDanoEHooks(interceptor.character, interceptor.player, metade, tipoDano)
-			aplicarDanoEHooks(character, targetPlayer, danoBase - metade, tipoDano)
+			aplicarDanoEHooks(interceptor.character, interceptor.player, metade, tipoDano, atacanteStats.propriedade)
+			aplicarDanoEHooks(character, targetPlayer, danoBase - metade, tipoDano, atacanteStats.propriedade)
 			msg = (interceptor.character.Name or "Alguém") .. " dividiu o dano ao assumir o lugar (rolou " .. r.total .. " -- empatou com o ataque)."
 		else
 			msg = (interceptor.character.Name or "Alguém") .. " assumiu o lugar e NÃO sofreu dano (rolou " .. r.total .. " vs ataque " .. attackTotal .. ")."
@@ -577,7 +617,7 @@ function CombatService.ResolveAttackVsCharacter(atacanteStats, targetCharacter, 
 
 	local resultado = { danoFinal = 0, danoBloqueado = 0, hpAtual = 0, hpMax = 0, morreu = false }
 	if finalDano > 0 and character.Vitals and character.Vitals.HP then
-		resultado = aplicarDanoEHooks(character, targetPlayer, finalDano, tipoDano)
+		resultado = aplicarDanoEHooks(character, targetPlayer, finalDano, tipoDano, atacanteStats.propriedade)
 		if resultado.danoBloqueado > 0 then
 			resultMsg = resultMsg .. " RD do TEN bloqueou " .. resultado.danoBloqueado .. " de dano."
 		end
@@ -1039,11 +1079,29 @@ function CombatService.BasicAttack(player)
 	local partes = { "1d6=" .. danoBase, "FOR+" .. forMod }
 
 	local renBonus = 0
-	if BuffManager.Has(player, "Ren") then
+	local atacaComAura = BuffManager.Has(player, "Ren")
+	if atacaComAura then
 		local ren = NenService.CalcRenBonus and NenService.CalcRenBonus(character) or { grau = 0 }
 		renBonus = ren.grau or 0
 		dano = dano + renBonus
 		table.insert(partes, "REN+" .. renBonus)
+	end
+
+	-- Critico: ataque COM AURA (Ren ativo) contra um alvo SEM NEN. O
+	-- boneco de treino representa exatamente isso -- um "constructo"
+	-- sem aura propria, igual as Bestas Naturais e humanos nao
+	-- despertados descritos no livro ("normalmente SAO VULNERAVEIS a
+	-- ataques de Aura"). Dobra o dano final (mesmo padrao das fichas
+	-- de monstro reais, que usam multiplicadores tipo "Mortal x2/x3/x4"
+	-- pra pontos vulneraveis -- aqui usamos x2 como base generica).
+	-- ⚠️ So cobre jogador-ataca-boneco por enquanto -- nao ha PvP
+	-- jogador-contra-jogador implementado ainda pra estender a mesma
+	-- regra contra Zetsu/personagens sem Nen desperto.
+	local foiCritico = false
+	if atacaComAura then
+		dano = dano * 2
+		foiCritico = true
+		table.insert(partes, "CRÍTICO x2 (aura vs sem Nen)")
 	end
 
 	local dmgResultado = damageDummy(nearest, dano, player, character)
@@ -1057,6 +1115,7 @@ function CombatService.BasicAttack(player)
 		dano = dano,
 		partes = table.concat(partes, " + "),
 		renBonus = renBonus,
+		foiCritico = foiCritico,
 		hpRestante = dmgResultado.hpRestante,
 		hpMax = dmgResultado.hpMax,
 		killed = dmgResultado.killed,

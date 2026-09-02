@@ -2930,6 +2930,30 @@ openButton.Activated:Connect(function()
 	openWindow(fichaFrame)
 end)
 
+-- Tecla N: abre a ficha ANTIGA direto na aba NEN, pra treinar
+-- Ten/Ren/Zetsu, comprar avancados e criar Hatsu -- essa
+-- funcionalidade ainda nao foi portada pra ficha nova
+-- (FichaUIClient.lua), que hoje so EXIBE os dados, sem botoes de
+-- acao. Pedido do Lucas: reabilitar o acesso pra poder testar, sem
+-- reintroduzir o botao duplicado antigo (AbrirFichaButton continua
+-- escondido, so isso muda). Precisa vir DEPOIS da declaracao de
+-- fichaFrame (por isso nao foi colocado no InputBegan generico la
+-- em cima, que roda antes dela existir no escopo).
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.N then
+		if fichaFrame.Visible then
+			closeWindow(fichaFrame)
+			return
+		end
+		refreshFicha()
+		setFichaTab("NEN")
+		openWindow(fichaFrame)
+	end
+end)
+
 criarButton.Activated:Connect(function()
 	openCreateWindow()
 end)
