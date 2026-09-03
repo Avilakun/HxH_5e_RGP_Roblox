@@ -41,6 +41,7 @@ local SkillSystem = require(script.Parent:WaitForChild("SkillSystem"))
 local DiceUtils = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("DiceUtils"))
 local SanityTagService = require(script.Parent:WaitForChild("SanityTagService"))
 local SanitySurgeService = require(script.Parent:WaitForChild("SanitySurgeService"))
+local AnimationDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("AnimationDB"))
 
 local CharacterService = nil
 local dummyFolder = nil
@@ -288,7 +289,12 @@ end
 -- Roblox.
 local function buildDummy()
 	local hd = Players:GetHumanoidDescriptionFromUserId(1) -- avatar "Roblox" padrao, sempre existe
-	local model = Players:CreateHumanoidModelFromDescription(hd, Enum.HumanoidRigType.R15)
+	-- Trocado de R15 pra R6: o jogo inteiro migrou pra R6 (as
+	-- animacoes de combate foram convertidas/gravadas em R6) -- o
+	-- boneco precisa bater com o mesmo tipo de esqueleto do jogador,
+	-- senao as animacoes carregam sem erro mas nao aparecem visualmente
+	-- (mesmo bug que ja resolvemos no personagem do jogador).
+	local model = Players:CreateHumanoidModelFromDescription(hd, Enum.HumanoidRigType.R6)
 	model.Name = "BonecoTreino"
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -300,6 +306,27 @@ local function buildDummy()
 	local root = model:FindFirstChild("HumanoidRootPart")
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	humanoid.WalkSpeed = DUMMY_WALKSPEED
+
+	-- Animacao de ataque do boneco -- toca no servidor (Animator
+	-- replica Play/Stop automaticamente pra todos os clientes que
+	-- veem o personagem, sem precisar de RemoteEvent). Reaproveita a
+	-- MESMA animacao "AtaqueCaC" que o jogador usa -- pedido do
+	-- Lucas: "o inimigo nao esta atacando com a animacao... deveria
+	-- me atacar para testarmos o tempo de reacao do QTE".
+	local dummyAnimator = Instance.new("Animator")
+	dummyAnimator.Parent = humanoid
+	local dummyAttackTrack = nil
+	local atkDef = AnimationDB.FindByChave("AtaqueCaC")
+	if atkDef and atkDef.id and atkDef.id ~= "" then
+		local anim = Instance.new("Animation")
+		anim.AnimationId = atkDef.id
+		local ok, track = pcall(function()
+			return dummyAnimator:LoadAnimation(anim)
+		end)
+		if ok then
+			dummyAttackTrack = track
+		end
+	end
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "HealthGui"
@@ -333,7 +360,7 @@ local function buildDummy()
 	gui.Parent = cabeca
 
 	model.PrimaryPart = root
-	dummies[model] = { hp = DUMMY_MAX_HP, maxHp = DUMMY_MAX_HP, aura = DUMMY_MAX_AURA, maxAura = DUMMY_MAX_AURA, respawning = false, humanoid = humanoid, root = root, attacking = false }
+	dummies[model] = { hp = DUMMY_MAX_HP, maxHp = DUMMY_MAX_HP, aura = DUMMY_MAX_AURA, maxAura = DUMMY_MAX_AURA, respawning = false, humanoid = humanoid, root = root, attacking = false, attackTrack = dummyAttackTrack }
 	placeDummy(model, DUMMY_POS)
 	updateLabel(model)
 	return model
@@ -449,6 +476,16 @@ local function aplicarDanoEHooks(character, player, dano, tipoDano, propriedadeG
 				end
 			end
 		end
+	elseif tipoDano == "Psíquico" or tipoDano == "Mental" then
+		-- RDM (Reducao de Dano Mental) = INT + nivel (ja calculado em
+		-- character.Vitals.RDM por CharacterService, comentario de
+		-- sessao anterior: "RDM ainda nao conectado a nenhum calculo
+		-- de dano real -- nao existe tipo Mental/Psiquico no
+		-- CombatService"). Fecha essa pendencia -- ainda nao existe
+		-- NENHUMA fonte de dano Psiquico/Mental de verdade no jogo
+		-- (nenhum Hatsu/ataque gera esse tipo ainda), entao a reducao
+		-- fica pronta mas sem uso real ate existir uma fonte.
+		rd = character.Vitals.RDM or 0
 	end
 
 	-- Desgasta a armadura equipada (se houver e o golpe realmente
@@ -750,6 +787,9 @@ local function startDummyAI(dummy)
 						data.attacking = true
 						data.currentTarget = nearestPlayer
 						showTelegraph(dummy, TELEGRAPH_SECONDS)
+						if data.attackTrack then
+							data.attackTrack:Play()
+						end
 						if EnemyTelegraph then
 							EnemyTelegraph:FireClient(nearestPlayer, TELEGRAPH_SECONDS)
 						end

@@ -80,14 +80,17 @@ end
 local function aplicarDesgosto(player, character, tagId)
 	if not podeDisparar(character, tagId) then return end
 	character.TagCooldowns[tagId] = TimeService.GetTotalGameHours()
-	if character.Vitals and character.Vitals.Sanidade then
-		local san = character.Vitals.Sanidade
-		san.Current = math.max(0, (san.Current or 0) - DESGOSTO_ESTRESSE)
+	-- Passa pelo RDM antes de afetar a Sanidade de verdade (ver
+	-- CharacterService.AplicarDanoSanidade -- pedido do Lucas:
+	-- qualquer reducao de sanidade, incluindo desgostos, respeita o
+	-- RDM do personagem primeiro).
+	local danoReal = CharacterService.AplicarDanoSanidade(character, DESGOSTO_ESTRESSE)
+	if danoReal > 0 then
 		SanitySurgeService.CheckThresholds(player, character)
 	end
 	CharacterService.SavePlayer(player)
 	if SanityTagService.OnTagTriggered then
-		SanityTagService.OnTagTriggered(player, tagId, "desgosto", DESGOSTO_ESTRESSE)
+		SanityTagService.OnTagTriggered(player, tagId, "desgosto", danoReal)
 	end
 end
 

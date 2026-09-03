@@ -1147,6 +1147,31 @@ function CharacterService.ApplyPermanentVitalLoss(character, tipo, quantidade)
 	end
 end
 
+-- Centraliza QUALQUER reducao da Sanidade ATUAL (estresse de
+-- Desgosto, dano psiquico/mental de Hatsu tipo "Flagelo da Mente",
+-- qualquer condicao futura que descreva reduzir "sanidade",
+-- "estresse" ou "dano psiquico") -- sempre passa pelo RDM do
+-- personagem ANTES de afetar a Sanidade de verdade. Pedido do Lucas:
+-- "sempre que um alvo sofrer qualquer condicao ou efeito que reduza
+-- o dano de sanidade... primeiro esse dano passa pelo RDM do usuario
+-- e se superar ai afeta de fato a sanidade total". Diferente de
+-- ApplyPermanentVitalLoss acima (que reduz o MAXIMO permanentemente,
+-- tipo Loucura) -- esta aqui reduz o ATUAL, recuperavel normalmente.
+-- Retorna quanto realmente foi aplicado (depois do RDM), pra quem
+-- chamar poder logar/mostrar mensagem precisa.
+function CharacterService.AplicarDanoSanidade(character, quantidadeBruta)
+	if quantidadeBruta <= 0 or not (character.Vitals and character.Vitals.Sanidade) then
+		return 0
+	end
+	local rdm = character.Vitals.RDM or 0
+	local danoReal = math.max(0, quantidadeBruta - rdm)
+	if danoReal > 0 then
+		local san = character.Vitals.Sanidade
+		san.Current = math.max(0, (san.Current or 0) - danoReal)
+	end
+	return danoReal
+end
+
 -- Aura Gigantesca (inclinacao positiva, ver SystemDB): "+30% de Aura
 -- maxima" -- a OUTRA forma (alem da escolha de evolucao por nivel) de
 -- a Aura maxima do personagem sair de 100%. IMPORTANTE: "Aura

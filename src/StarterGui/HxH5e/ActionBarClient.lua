@@ -19,8 +19,85 @@ local AttemptReaction = HxH5e:WaitForChild("AttemptReaction")
 local EnemyTelegraph = HxH5e:WaitForChild("EnemyTelegraph")
 local EnemyAttackResult = HxH5e:WaitForChild("EnemyAttackResult")
 local HotkeyButtonFX = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("HotkeyButtonFX"))
+local AnimationDB = require(ReplicatedStorage:WaitForChild("HxH5e"):WaitForChild("Shared"):WaitForChild("AnimationDB"))
 local Theme = require(script.Parent:WaitForChild("FichaUITheme"))
 local FichaUIData = require(script.Parent:WaitForChild("FichaUIData"))
+
+-- ================= Animacoes do personagem (Ataque/Bloquear) =================
+-- Primeiro pedaco de conexao real de animacao -- o Lucas foi
+-- publicando os IDs aos poucos e preenchendo o AnimationDB. So toca
+-- se o id nao estiver vazio (assim nao quebra enquanto faltam
+-- animacoes ainda nao publicadas). Recarrega as tracks toda vez que
+-- o personagem (re)nasce -- Animator/Humanoid sao recriados no
+-- respawn, igual o cuidado que ja tomei no MouseLockCamera.
+local animTracks = {} -- [chave do AnimationDB] = AnimationTrack carregada
+local function carregarAnimacoes(character)
+	animTracks = {}
+	local ok1, humanoid = pcall(function()
+		return character:WaitForChild("Humanoid", 5)
+	end)
+	if not ok1 or not humanoid then return end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
+	for _, chave in ipairs({ "AtaqueCaC", "Bloquear" }) do
+		local def = AnimationDB.FindByChave(chave)
+		if def and def.id and def.id ~= "" then
+			local anim = Instance.new("Animation")
+			anim.AnimationId = def.id
+			local ok, track = pcall(function()
+				return animator:LoadAnimation(anim)
+			end)
+			if ok then
+				animTracks[chave] = track
+			else
+				warn("[HxH5e] Falha ao carregar animacao '" .. chave .. "': " .. tostring(track))
+			end
+		end
+	end
+end
+
+local function tocarAnimacao(chave)
+	local track = animTracks[chave]
+	if not track then return end
+	-- Item 1 (Lucas): "quando clico repetidas vezes a animacao volta
+	-- cedo demais pro inicio" -- Play() sempre reinicia do zero, mesmo
+	-- se ja estiver tocando. Ignora cliques repetidos enquanto a
+	-- animacao anterior ainda esta rodando, em vez de reiniciar.
+	if track.IsPlaying then return end
+	track:Play()
+end
+
+-- Item 2 (Lucas): bloqueio deveria ser so enquanto o botao esta
+-- segurado, mas isso ainda nao existe -- por enquanto, toca e para
+-- sozinha depois de um tempo curto (nao fica "grudada"). Duracao
+-- escolhida pra bater com a janela de reacao ja usada no jogo
+-- (TELEGRAPH_SECONDS = 1.8s no servidor).
+local BLOQUEIO_DURACAO_AUTO = 1.5
+local function tocarBloqueioComDuracaoLimitada()
+	local track = animTracks["Bloquear"]
+	if not track then return end
+	track:Play()
+	task.delay(BLOQUEIO_DURACAO_AUTO, function()
+		if track.IsPlaying then
+			track:Stop()
+		end
+	end)
+end
+
+player.CharacterAdded:Connect(carregarAnimacoes)
+-- Roblox pode demorar pra criar o personagem apos o jogador entrar --
+-- o resto do script (varios requires, GUIs, etc) roda ANTES disso
+-- terminar, entao "if player.Character then" sozinho podia rodar
+-- cedo demais e nunca carregar nada (bug real que encontrei
+-- testando). task.spawn + WaitForChild espera sem travar o resto do
+-- script.
+task.spawn(function()
+	local character = player.Character or player.CharacterAdded:Wait()
+	carregarAnimacoes(character)
+end)
 
 local playerGui = player:WaitForChild("PlayerGui")
 local guiAntigo = playerGui:FindFirstChild("HxH5eActionBar")
@@ -264,6 +341,7 @@ local reactionWarningLabel = makeLabel(reactionWarning, "Label", "⚠ ATAQUE INI
 reactionWarningLabel.TextColor3 = Color3.fromRGB(255, 200, 200)
 
 local function doBlock()
+	tocarBloqueioComDuracaoLimitada()
 	local result = AttemptReaction:InvokeServer("block")
 	showMsg(tostring(result.message or result.error))
 end
@@ -348,8 +426,12 @@ task.spawn(function()
 
 		local trilho = Instance.new("Frame")
 		trilho.Name = "Trilho"
-		trilho.Size = UDim2.new(0.6, 0, 0.16, 0)
-		trilho.Position = UDim2.new(0.32, 0, 0.42, 0)
+		-- Recalibrado com zoom em Play (antes tinha um "buraco" preto
+		-- visivel entre a borda arredondada esquerda do desenho e o
+		-- inicio real do preenchimento -- valores antigos 0.6/0.32
+		-- eram so estimativa visual, nunca conferidos de perto).
+		trilho.Size = UDim2.new(0.72, 0, 0.16, 0)
+		trilho.Position = UDim2.new(0.245, 0, 0.42, 0)
 		trilho.BackgroundTransparency = 1
 		trilho.ClipsDescendants = true
 		trilho.Parent = btn
@@ -365,9 +447,10 @@ task.spawn(function()
 	end
 
 	VitalFills.PV = montarFill("PV_Bar")
+	VitalFills.Aura = montarFill("Aura")
 	VitalFills.Sanidade = montarFill("Sanidade_Bar")
 	VitalFills.Reacoes = montarFill("Reacoes_Bar")
-	montarFill("Armoradura_Bar") -- so tinge a moldura por enquanto, sem preenchimento definido
+	montarFill("Armadura_Bar") -- so tinge a moldura por enquanto, sem preenchimento definido
 end)
 
 local function updateVitalFill(fill, atual, max)
@@ -392,6 +475,7 @@ local function refreshBars()
 			local pct = math.clamp(aura.Current / aura.Max, 0, 1)
 			auraBar.Size = UDim2.new(pct, 0, 1, 0)
 			auraLabel.Text = "Aura: " .. tostring(math.floor(aura.Current)) .. "/" .. tostring(math.floor(aura.Max))
+			updateVitalFill(VitalFills.Aura, aura.Current, aura.Max)
 		end
 		if sanidade and sanidade.Max and sanidade.Max > 0 then
 			updateVitalFill(VitalFills.Sanidade, sanidade.Current, sanidade.Max)
@@ -435,6 +519,7 @@ end)
 -- Extraida pra funcao nomeada pra poder ser chamada tanto pelo
 -- clique quanto pela tecla de atalho [F].
 local function doAttack()
+	tocarAnimacao("AtaqueCaC")
 	local result = BasicAttack:InvokeServer()
 	if result then
 		if result.success then
@@ -740,8 +825,13 @@ task.spawn(function()
 	-- que fica ali. So principios ja desbloqueados sao clicaveis
 	-- dentro do radial (os travados ficam esmaecidos e sem acao).
 	local NUM_SLOTS = 4
-	local RAIO_RADIAL = 130
-	local CENTRO_X, CENTRO_Y = 0.5, 0.42
+	-- Espacamento aumentado (pedido do Lucas: "menu radial deixou um
+	-- icone de fora" -- testando essa alternativa primeiro, antes de
+	-- mexer em manter 1 icone sempre selecionado). Raio maior +
+	-- centro mais proximo do meio vertical da tela, com mais folga
+	-- de segurança pras bordas em telas menores.
+	local RAIO_RADIAL = 165
+	local CENTRO_X, CENTRO_Y = 0.5, 0.46
 
 	local slotButtons = {}
 	local slotLabels = {}
@@ -798,11 +888,29 @@ task.spawn(function()
 
 	backdrop.Activated:Connect(fecharRadial)
 
+	-- Pedido do Lucas: quando um principio e atribuido a um slot, o
+	-- SIMBOLO (icone) precisa continuar aparecendo -- antes so o texto
+	-- (sigla) ficava visivel e o icone sumia. Agora copia a Image do
+	-- icone de origem pro proprio slot, e esconde o texto; slot vazio
+	-- volta a mostrar "+" sem imagem nenhuma.
 	local function atualizarSlotVisual(slotIndex)
+		local slot = slotButtons[slotIndex]
 		local lbl = slotLabels[slotIndex]
-		if not lbl then return end
 		local nome = slotAtribuido[slotIndex]
-		lbl.Text = nome and nome or "+"
+		if nome then
+			local icon = principioIcones[nome]
+			if slot and icon then
+				slot.Image = icon.Image
+				slot.ImageColor3 = icon.ImageColor3
+			end
+			if lbl then lbl.Visible = false end
+		else
+			if slot then slot.Image = "" end
+			if lbl then
+				lbl.Visible = true
+				lbl.Text = "+"
+			end
+		end
 	end
 
 	for i = 1, NUM_SLOTS do
@@ -823,18 +931,96 @@ task.spawn(function()
 		end
 	end
 
+	-- Nome de exibicao pra cada principio -- "Inp" e so a chave interna,
+	-- o nome de verdade do principio (In) e mais curto.
+	local NOME_EXIBICAO = {
+		Ten = "Ten", Ren = "Ren", Gyo = "Gyo", Shu = "Shu",
+		Ken = "Ken", Ko = "Ko", Ryu = "Ryu", Inp = "In",
+	}
+
+	-- Titulo com o nome do principio, abaixo de cada icone do radial --
+	-- pedido do Lucas pra ajudar quem ainda nao decorou qual icone e
+	-- qual principio. Segunda passada de estilo (a primeira so tinha
+	-- o texto cru): sombra de verdade (label duplicado, deslocado e
+	-- semitransparente, atras do texto principal) + sublinhado via
+	-- RichText (<u>). Criado como FILHO do icone, assim acompanha a
+	-- posicao dele automaticamente sem precisar recalcular nada no
+	-- abrirRadial.
+	for _, nome in ipairs(PRINCIPIOS) do
+		local icon = principioIcones[nome]
+		if icon then
+			local texto = NOME_EXIBICAO[nome] or nome
+
+			-- Sombra: copia deslocada (2px direita/baixo), preta,
+			-- semitransparente, por TRAS do texto principal (ZIndex
+			-- menor). Mais suave/legivel que so o TextStroke sozinho
+			-- em fundos muito escuros ou muito claros.
+			local sombra = Instance.new("TextLabel")
+			sombra.Name = "TituloSombra"
+			sombra.Size = UDim2.new(3, 0, 0, 16)
+			sombra.Position = UDim2.new(-1, 2, 1, 6)
+			sombra.BackgroundTransparency = 1
+			sombra.Font = Enum.Font.GothamBold
+			sombra.TextSize = 13
+			sombra.TextColor3 = Color3.new(0, 0, 0)
+			sombra.TextTransparency = 0.35
+			sombra.RichText = true
+			sombra.Text = "<u>" .. texto .. "</u>"
+			sombra.ZIndex = 100
+			sombra.Parent = icon
+
+			local titulo = Instance.new("TextLabel")
+			titulo.Name = "Titulo"
+			titulo.Size = UDim2.new(3, 0, 0, 16)
+			titulo.Position = UDim2.new(-1, 0, 1, 4)
+			titulo.BackgroundTransparency = 1
+			titulo.Font = Enum.Font.GothamBold
+			titulo.TextSize = 13
+			titulo.TextColor3 = Color3.new(1, 1, 1)
+			titulo.TextStrokeTransparency = 0.4
+			titulo.TextStrokeColor3 = Color3.new(0, 0, 0)
+			titulo.RichText = true
+			titulo.Text = "<u>" .. texto .. "</u>"
+			titulo.ZIndex = 101
+			titulo.Parent = icon
+		end
+	end
+
 	for _, nome in ipairs(PRINCIPIOS) do
 		local icon = principioIcones[nome]
 		if icon then
 			icon.Activated:Connect(function()
 				if slotSendoEditado then
-					-- Radial aberto pra configurar um SLOT: atribui o
-					-- principio clicado aquele slot e persiste.
+					-- Radial aberto pra configurar um SLOT.
+					-- Pedido do Lucas, testando: clicar num principio
+					-- que JA ESTA atribuido a algum slot (qualquer um,
+					-- incluindo o que esta sendo editado agora) REMOVE
+					-- ele de la, em vez de atribuir ao slot atual --
+					-- essa virou a forma de "tirar" um principio da
+					-- hotbar (alem do botao direito, que so abre o
+					-- radial pra trocar). So atribui normalmente ao
+					-- slotSendoEditado se o principio clicado ainda
+					-- NAO estiver em slot nenhum.
 					local slotIndex = slotSendoEditado
-					local result = HxH5e.SetHotkeySlot:InvokeServer(slotIndex, nome)
-					if result and result.success then
-						slotAtribuido[slotIndex] = nome
-						atualizarSlotVisual(slotIndex)
+					local jaAtribuidoEm = nil
+					for outroIndex, outroNome in pairs(slotAtribuido) do
+						if outroNome == nome then
+							jaAtribuidoEm = outroIndex
+							break
+						end
+					end
+					if jaAtribuidoEm then
+						local resultRemove = HxH5e.SetHotkeySlot:InvokeServer(jaAtribuidoEm, false)
+						if resultRemove and resultRemove.success then
+							slotAtribuido[jaAtribuidoEm] = nil
+							atualizarSlotVisual(jaAtribuidoEm)
+						end
+					else
+						local result = HxH5e.SetHotkeySlot:InvokeServer(slotIndex, nome)
+						if result and result.success then
+							slotAtribuido[slotIndex] = nome
+							atualizarSlotVisual(slotIndex)
+						end
 					end
 					fecharRadial()
 				elseif radialAbertoViaShift then
