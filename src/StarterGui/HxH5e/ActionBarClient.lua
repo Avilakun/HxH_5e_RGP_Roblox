@@ -13,6 +13,8 @@ local GetHatsus = HxH5e:WaitForChild("GetHatsus")
 local ActivateHatsu = HxH5e:WaitForChild("ActivateHatsu")
 local ActivatePrinciple = HxH5e:WaitForChild("ActivatePrinciple")
 local BasicAttack = HxH5e:WaitForChild("BasicAttack")
+local ResetVitaisTeste = HxH5e:WaitForChild("ResetVitaisTeste")
+local ResolverQueda = HxH5e:WaitForChild("ResolverQueda")
 local BuffTick = HxH5e:WaitForChild("BuffTick")
 local AchievementUnlocked = HxH5e:WaitForChild("AchievementUnlocked")
 local AttemptReaction = HxH5e:WaitForChild("AttemptReaction")
@@ -42,7 +44,7 @@ local function carregarAnimacoes(character)
 		animator = Instance.new("Animator")
 		animator.Parent = humanoid
 	end
-	for _, chave in ipairs({ "AtaqueCaC", "Bloquear" }) do
+	for _, chave in ipairs({ "AtaqueCaC", "Bloquear", "Karate1", "Karate2", "Karate3", "Karate4", "Karate5", "TomarDanoCabeca", "Caindo", "CairComEstilo", "QuedaLadoExplosao", "DerrubadoCaindo", "QuedaAlturaCostas", "QuedaCurtaCostas", "Levantando" }) do
 		local def = AnimationDB.FindByChave(chave)
 		if def and def.id and def.id ~= "" then
 			local anim = Instance.new("Animation")
@@ -75,7 +77,7 @@ end
 -- sozinha depois de um tempo curto (nao fica "grudada"). Duracao
 -- escolhida pra bater com a janela de reacao ja usada no jogo
 -- (TELEGRAPH_SECONDS = 1.8s no servidor).
-local BLOQUEIO_DURACAO_AUTO = 1.5
+local BLOQUEIO_DURACAO_AUTO = 0.7 -- reduzido de 1.5s, pedido do Lucas pra testar se fica melhor assim
 local function tocarBloqueioComDuracaoLimitada()
 	local track = animTracks["Bloquear"]
 	if not track then return end
@@ -98,6 +100,71 @@ task.spawn(function()
 	local character = player.Character or player.CharacterAdded:Wait()
 	carregarAnimacoes(character)
 end)
+
+-- ================= Mecanica de Queda (Lucas, regras detalhadas) =================
+-- Detecta queda via Humanoid.StateChanged (Freefall -> Landed),
+-- mede a altura em studs, e manda pro servidor resolver (TR de DES,
+-- CD crescente com a altura, dano 1d6 por 10 studs/~3m -- ver
+-- CombatService.ResolverQueda pros detalhes/citacoes). So dispara
+-- pra quedas de pelo menos 10 studs (servidor tambem ignora quedas
+-- menores, dupla checagem).
+local function conectarDeteccaoQueda(character)
+	local humanoid = character:WaitForChild("Humanoid", 5)
+	local root = character:WaitForChild("HumanoidRootPart", 5)
+	if not humanoid or not root then return end
+
+	local alturaInicioQueda = nil
+
+	humanoid.StateChanged:Connect(function(_, newState)
+		if newState == Enum.HumanoidStateType.Freefall then
+			if not alturaInicioQueda then
+				alturaInicioQueda = root.Position.Y
+				tocarAnimacao("Caindo")
+			end
+		elseif newState == Enum.HumanoidStateType.Landed then
+			if not alturaInicioQueda then return end
+			local quedaStuds = alturaInicioQueda - root.Position.Y
+			alturaInicioQueda = nil
+			if quedaStuds < 10 then return end
+
+			local result = ResolverQueda:InvokeServer(quedaStuds, false)
+			if not result or not result.success or result.semQueda then return end
+
+			if result.sucesso then
+				tocarAnimacao("CairComEstilo")
+			else
+				if result.tipoQuedaFalha == "DerrubadoCaindo" then
+					-- Nota do Lucas: "Derrubado e Caindo" SEMPRE
+					-- toca ANTES de "Queda de Altura (Costas)".
+					local trackDerrubado = animTracks["DerrubadoCaindo"]
+					tocarAnimacao("DerrubadoCaindo")
+					local duracao = trackDerrubado and trackDerrubado.Length > 0 and trackDerrubado.Length or 1
+					task.delay(duracao, function()
+						tocarAnimacao("QuedaAlturaCostas")
+					end)
+				elseif result.tipoQuedaFalha then
+					tocarAnimacao(result.tipoQuedaFalha)
+				end
+
+				-- Toda queda com FALHA levanta sozinho depois, se
+				-- ainda tiver PV (regra explicita do Lucas).
+				if result.hpRestante and result.hpRestante > 0 then
+					task.delay(2.2, function()
+						tocarAnimacao("Levantando")
+					end)
+				end
+			end
+
+			showMsg("Queda (" .. math.floor(quedaStuds) .. " studs): TR DES " .. tostring(result.totalTR) .. " vs CD " .. tostring(result.cd)
+				.. " -- " .. (result.sucesso and "sucesso" or "falha") .. " | Dano: " .. tostring(result.dano))
+		end
+	end)
+end
+
+if player.Character then
+	conectarDeteccaoQueda(player.Character)
+end
+player.CharacterAdded:Connect(conectarDeteccaoQueda)
 
 local playerGui = player:WaitForChild("PlayerGui")
 local guiAntigo = playerGui:FindFirstChild("HxH5eActionBar")
@@ -363,6 +430,9 @@ end)
 EnemyAttackResult.OnClientEvent:Connect(function(data)
 	reactionWarning.Visible = false
 	showMsg(tostring(data.message))
+	if data.tocarReacaoDano then
+		tocarAnimacao("TomarDanoCabeca")
+	end
 end)
 
 -- ================= Menu de Hatsus =================
@@ -518,8 +588,29 @@ end)
 
 -- Extraida pra funcao nomeada pra poder ser chamada tanto pelo
 -- clique quanto pela tecla de atalho [F].
+-- Previsao LOCAL do estagio de combo (mesma regra do servidor:
+-- janela de 1.2s, 1->2->3->4->5->1). So pra tocar a animacao NA HORA
+-- sem esperar o round-trip do servidor -- o servidor calcula seu
+-- proprio estagio de forma independente e autoritativa pro dano; se
+-- os dois divergirem por 1 estagio ocasionalmente (lag, etc) so afeta
+-- qual animacao aparece, nao o dano real.
+local COMBO_JANELA_CLIENTE = 1.2
+local comboStageCliente = 0
+local comboUltimoAtaque = 0
+local function proximoEstagioComboCliente()
+	local agora = os.clock()
+	if comboStageCliente == 0 or (agora - comboUltimoAtaque) > COMBO_JANELA_CLIENTE then
+		comboStageCliente = 1
+	else
+		comboStageCliente = (comboStageCliente % 5) + 1
+	end
+	comboUltimoAtaque = agora
+	return comboStageCliente
+end
+
 local function doAttack()
-	tocarAnimacao("AtaqueCaC")
+	local estagio = proximoEstagioComboCliente()
+	tocarAnimacao("Karate" .. estagio)
 	local result = BasicAttack:InvokeServer()
 	if result then
 		if result.success then
@@ -555,12 +646,53 @@ local function doAttack()
 end
 atacarBtn.Activated:Connect(doAttack)
 
+-- VFX de teste: "Aura Azul" (Model no Workspace, ja vem com
+-- particulas configuradas e ativadas) -- clona so os Attachments "C"
+-- e "A" do Torso dela (relativos ao pai, entao seguem o personagem
+-- automaticamente ao reparentar) e anexa no Torso do jogador quando
+-- TEN ou REN ativam com sucesso. Deixei de fora "Full body aura" por
+-- enquanto (sao Parts com posicao absoluta, precisariam de Weld pra
+-- seguir o personagem -- os 2 Attachments ja dao efeito visual rico
+-- o suficiente pra esse teste). Nenhum som de aura encontrado no
+-- jogo pra reaproveitar. Duracao sincronizada com o buff real (6s,
+-- mesmo padrao do BuffManager/NenService).
+local VFX_DURACAO = 6
+local function mostrarAuraAzul()
+	local auraModel = workspace:FindFirstChild("Aura Azul")
+	if not auraModel then return end
+	local origemTorso = auraModel:FindFirstChild("Torso")
+	if not origemTorso then return end
+	local personagem = player.Character
+	if not personagem then return end
+	local destinoTorso = personagem:FindFirstChild("Torso") or personagem:FindFirstChild("UpperTorso")
+	if not destinoTorso then return end
+
+	local clones = {}
+	for _, nomeAttachment in ipairs({ "C", "A" }) do
+		local original = origemTorso:FindFirstChild(nomeAttachment)
+		if original then
+			local clone = original:Clone()
+			clone.Parent = destinoTorso
+			table.insert(clones, clone)
+		end
+	end
+
+	task.delay(VFX_DURACAO, function()
+		for _, c in ipairs(clones) do
+			c:Destroy()
+		end
+	end)
+end
+
 local function usePrinciple(nome)
 	local result = ActivatePrinciple:InvokeServer(nome)
 	if result then
 		showMsg(tostring(result.message or result.error or ""))
 		if result.success and result.message then
 			logMsg(tostring(result.message))
+		end
+		if result.success and (nome == "Ten" or nome == "Ren") then
+			mostrarAuraAzul()
 		end
 	end
 	refreshBars()
@@ -737,6 +869,17 @@ local KEYBINDS = {
 	[Enum.KeyCode.E] = function()
 		if esquivarIconRef then HotkeyButtonFX.Blink(esquivarIconRef) end
 		doDodge()
+	end,
+	-- DEBUG/TESTE: pedido do Lucas -- "vitais estao com salvamento
+	-- persistente, atrapalha alguns recursos no teste de combate".
+	-- Restaura PV/Aura/Sanidade pro maximo na hora, sem precisar
+	-- esperar regenerar ou criar personagem novo entre testes.
+	[Enum.KeyCode.K] = function() -- F9 e reservada pelo Roblox Studio (Performance Stats), trocado pra K
+		local result = ResetVitaisTeste:InvokeServer()
+		if result then
+			showMsg(tostring(result.message or result.error or ""))
+		end
+		refreshBars()
 	end,
 }
 

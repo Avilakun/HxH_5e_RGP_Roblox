@@ -328,6 +328,23 @@ local function buildDummy()
 		end
 	end
 
+	-- Animacao de reacao a dano (Lucas, "animacoes de reacao a dano").
+	-- Usa "TomarDanoCabeca" como reacao padrao do boneco -- o slot
+	-- generico "TomarDano" ainda esta vazio, e essa e uma reacao
+	-- curta que nao depende de contexto (bloqueio cruzado/boxe etc).
+	local dummyHitTrack = nil
+	local hitDef = AnimationDB.FindByChave("TomarDanoCabeca")
+	if hitDef and hitDef.id and hitDef.id ~= "" then
+		local animHit = Instance.new("Animation")
+		animHit.AnimationId = hitDef.id
+		local okHit, trackHit = pcall(function()
+			return dummyAnimator:LoadAnimation(animHit)
+		end)
+		if okHit then
+			dummyHitTrack = trackHit
+		end
+	end
+
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "HealthGui"
 	gui.Size = UDim2.new(0, 140, 0, 44)
@@ -360,7 +377,7 @@ local function buildDummy()
 	gui.Parent = cabeca
 
 	model.PrimaryPart = root
-	dummies[model] = { hp = DUMMY_MAX_HP, maxHp = DUMMY_MAX_HP, aura = DUMMY_MAX_AURA, maxAura = DUMMY_MAX_AURA, respawning = false, humanoid = humanoid, root = root, attacking = false, attackTrack = dummyAttackTrack }
+	dummies[model] = { hp = DUMMY_MAX_HP, maxHp = DUMMY_MAX_HP, aura = DUMMY_MAX_AURA, maxAura = DUMMY_MAX_AURA, respawning = false, humanoid = humanoid, root = root, attacking = false, attackTrack = dummyAttackTrack, hitTrack = dummyHitTrack }
 	placeDummy(model, DUMMY_POS)
 	updateLabel(model)
 	return model
@@ -387,9 +404,217 @@ end
 -- player/character sao opcionais -- so usados pra conquista/SanityTag
 -- (fazem sentido quando quem causou o dano foi um JOGADOR, seja via
 -- ataque normal ou contra-ataque).
+-- Mecanica de Queda (Lucas, regras detalhadas):
+-- 1. Surge a queda (buraco, falha em escalada, empurrao -- inclusive
+--    por explosao).
+-- 2. Personagem faz um TR de Destreza. CD estimada crescendo com a
+--    altura (10 + 1 por cada 10 studs / 3m) -- NAO achei a CD exata
+--    citada no material fonte, so o padrao geral "TR de DES pra
+--    condicao Caido" espalhado pelo Manual de Hatsus -- ajustavel se
+--    o Lucas quiser um numero diferente.
+-- 3. SUCESSO no TR: toca "CairComEstilo" (aterrissagem/Land) ao
+--    chegar no chao, sem cair caido.
+-- 4. FALHA no TR: toca a queda apropriada (QuedaLadoExplosao se foi
+--    empurrao por explosao; senao DerrubadoCaindo -> QuedaAlturaCostas
+--    em sequencia pra quedas grandes, ou so QuedaCurtaCostas pra
+--    quedas menores) e, se ainda tiver PV, toca "Levantando"
+--    automaticamente depois.
+-- 5. Dano = 1d6 por cada 10 studs (~3m) de altura, SEMPRE aplicado
+--    (sucesso ou falha no TR -- o teste decide COMO cai, nao SE toma
+--    dano; nenhuma citacao encontrada de "sucesso = sem dano" pra
+--    quedas comuns, diferente da regra separada de RD por CA vs
+--    altura que ja existe com TEN).
+local STUDS_POR_BLOCO_QUEDA = 10
+local CD_QUEDA_BASE = 10
+
+function CombatService.ResolverQueda(player, alturaStuds, foiEmpurradoExplosao)
+	if not CharacterService then
+		return { success = false, error = "Sistema de combate não iniciado." }
+	end
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	-- Sanitiza a altura recebida do cliente (deteccao de queda roda
+	-- no client -- limite generoso pra evitar valores absurdos, mas
+	-- sem travar quedas legitimas de mapas grandes).
+	alturaStuds = math.clamp(tonumber(alturaStuds) or 0, 0, 500)
+	if alturaStuds < STUDS_POR_BLOCO_QUEDA then
+		return { success = true, semQueda = true }
+	end
+
+	local blocos = math.floor(alturaStuds / STUDS_POR_BLOCO_QUEDA)
+	local desMod = attrMod(character, "DES")
+	local rolagem = rollDice(1, 20)
+	local totalTR = rolagem + desMod
+	local cd = CD_QUEDA_BASE + blocos
+	local sucesso = totalTR >= cd
+
+	local dano = rollDice(blocos, 6)
+	local danoReal = CharacterService.ApplyDamage(character, dano, 0)
+	CharacterService.SavePlayer(player)
+
+	local tipoQuedaFalha = nil
+	if not sucesso then
+		if foiEmpurradoExplosao then
+			tipoQuedaFalha = "QuedaLadoExplosao"
+		elseif blocos >= 4 then -- ~12m+ (grande, dispara a sequencia derrubado->altura)
+			tipoQuedaFalha = "DerrubadoCaindo"
+		else
+			tipoQuedaFalha = "QuedaCurtaCostas"
+		end
+	end
+
+	return {
+		success = true,
+		sucesso = sucesso,
+		rolagem = rolagem,
+		desMod = desMod,
+		totalTR = totalTR,
+		cd = cd,
+		blocos = blocos,
+		dano = dano,
+		hpRestante = danoReal.hpAtual,
+		hpMax = danoReal.hpMax,
+		tipoQuedaFalha = tipoQuedaFalha,
+		morreu = danoReal.morreu,
+	}
+end
+
+-- Mecanica de Escalada (Lucas, regras detalhadas):
+-- CD = 8 + 2 pra cada 10 studs (~3m) ja escalados ACIMA do chao
+-- original (nao reseta ao pular pra outra parede -- so quando volta
+-- pro chao de verdade). Teste = 1d20 + Atletismo (SkillSystem, ja
+-- inclui atributo + proficiencia). Cada clique = 1 rolagem, sucesso
+-- sobe um "degrau" de 10 studs.
+--
+-- character.EscaladaChaoY guarda a referencia do chao original da
+-- sessao de escalada atual -- calculada uma vez (raycast pra baixo)
+-- no primeiro clique, e resetada quando o jogador aterrissa de volta
+-- perto desse nivel (ver reset em ResetEscaladaSeNoChao).
+local ESCALADA_DEGRAU_STUDS = 10
+local ESCALADA_CD_BASE = 8
+
+function CombatService.TentarEscalada(player)
+	if not CharacterService then
+		return { success = false, error = "Sistema de combate não iniciado." }
+	end
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then
+		return { success = false, error = "Nenhum personagem ativo." }
+	end
+	local plrChar = player.Character
+	local root = plrChar and plrChar:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return { success = false, error = "Personagem sem HumanoidRootPart." }
+	end
+
+	-- Desancora do clique anterior (se ele estava "grudado" na
+	-- parede depois de subir) -- desancorar so ANTES de processar o
+	-- proximo clique deixa ele preso na parede entre um clique e
+	-- outro, mas livre pra continuar escalando/se mover se quiser.
+	if root.Anchored then
+		root.Anchored = false
+	end
+
+	if not character.EscaladaChaoY then
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		rayParams.FilterDescendantsInstances = { plrChar }
+		local result = Workspace:Raycast(root.Position, Vector3.new(0, -200, 0), rayParams)
+		character.EscaladaChaoY = result and result.Position.Y or root.Position.Y
+	end
+
+	-- Raycast pra frente, achando a parede de verdade (autoridade do
+	-- servidor -- nao confia so na deteccao visual do cliente). Bug
+	-- real que corrigi testando: mover o personagem so em Y, mantendo
+	-- a mesma posicao XZ de antes (a 4-5 studs de distancia da
+	-- parede), deixava ele "flutuando no ar" sem apoio -- a gravidade
+	-- puxava de volta no proximo frame, Y nunca mudava de verdade.
+	-- Agora reposiciona colado na parede (2 studs de distancia).
+	local wallRayParams = RaycastParams.new()
+	wallRayParams.FilterType = Enum.RaycastFilterType.Exclude
+	wallRayParams.FilterDescendantsInstances = { plrChar }
+	local lookVectorInicial = root.CFrame.LookVector
+	local wallResult = Workspace:Raycast(root.Position, lookVectorInicial * 8, wallRayParams)
+	if not wallResult then
+		return { success = false, error = "Nenhuma parede escalavel na direcao que voce esta olhando." }
+	end
+	local paredeNormal = wallResult.Normal
+
+	local alturaAcima = math.max(0, root.Position.Y - character.EscaladaChaoY)
+	local degraus = math.floor(alturaAcima / ESCALADA_DEGRAU_STUDS)
+	local cd = ESCALADA_CD_BASE + 2 * degraus
+
+	local bonusAtletismo = SkillSystem.GetSkillBonus(character, "Atletismo")
+	local rolagem = rollDice(1, 20)
+	local total = rolagem + bonusAtletismo
+	local sucesso = total >= cd
+
+	if sucesso then
+		-- Desabilita a colisao do PERSONAGEM por um instante durante o
+		-- teleporte -- senao a fisica do Roblox empurra ele de volta
+		-- no mesmo frame contra a parede solida.
+		local partesOriginais = {}
+		for _, part in ipairs(plrChar:GetDescendants()) do
+			if part:IsA("BasePart") then
+				partesOriginais[part] = part.CanCollide
+				part.CanCollide = false
+			end
+		end
+		-- Posiciona COLADO na parede (2 studs de distancia na direcao
+		-- da normal da superficie), subindo um degrau em Y.
+		local novaPos = wallResult.Position + paredeNormal * 2 + Vector3.new(0, ESCALADA_DEGRAU_STUDS, 0)
+		root.CFrame = CFrame.new(novaPos, novaPos - paredeNormal)
+		task.defer(function()
+			for part, original in pairs(partesOriginais) do
+				if part and part.Parent then
+					part.CanCollide = original
+				end
+			end
+			-- Ancora DEPOIS de restaurar a colisao -- senao o
+			-- personagem fica "flutuando", a gravidade puxa de volta
+			-- no proximo frame antes do jogador conseguir clicar de
+			-- novo pra continuar escalando. Desancora sozinho no
+			-- INICIO do proximo clique (ver funcao acima).
+			root.Anchored = true
+		end)
+	end
+
+	return {
+		success = true,
+		sucesso = sucesso,
+		rolagem = rolagem,
+		bonusAtletismo = bonusAtletismo,
+		total = total,
+		cd = cd,
+		alturaAcima = alturaAcima,
+	}
+end
+
+-- Chamado quando o jogador aterrissa (Humanoid.StateChanged Landed,
+-- avisado pelo cliente) -- se a posicao esta perto do chao original
+-- da sessao de escalada, encerra a sessao (proximo clique recalcula
+-- do zero). Nao encerra se ainda estiver alto (pulou de uma parede
+-- pra outra, por exemplo).
+function CombatService.ResetEscaladaSeNoChao(player)
+	if not CharacterService then return end
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character or not character.EscaladaChaoY then return end
+	local plrChar = player.Character
+	local root = plrChar and plrChar:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	if math.abs(root.Position.Y - character.EscaladaChaoY) <= 5 then
+		character.EscaladaChaoY = nil
+	end
+end
+
 local function damageDummy(dummy, dano, player, character)
 	local data = dummies[dummy]
 	if not data then return { hpRestante = 0, hpMax = 0, killed = false } end
+	if data.hitTrack then
+		data.hitTrack:Play()
+	end
 	data.hp = data.hp - dano
 	local killed = data.hp <= 0
 	if killed then
@@ -697,9 +922,13 @@ local function resolveDummyAttack(dummy, targetPlayer)
 	local resultado = CombatService.ResolveAttackVsCharacter(atacanteStats, character, targetPlayer, reaction, reactionOpts)
 
 	if EnemyAttackResult then
-		EnemyAttackResult:FireClient(targetPlayer, { message = resultado.message, dano = resultado.dano, hp = resultado.hp })
+		-- Reacao a dano do JOGADOR (Lucas, continuacao do que ja
+		-- fizemos no boneco): so toca a animacao quando o golpe
+		-- REALMENTE acertou (dano > 0) -- bloqueio/esquiva bem
+		-- sucedidos resultam em dano 0, sem reacao de "apanhar".
+		EnemyAttackResult:FireClient(targetPlayer, { message = resultado.message, dano = resultado.dano, hp = resultado.hp, tocarReacaoDano = resultado.dano > 0 })
 		if interceptor and interceptor.player then
-			EnemyAttackResult:FireClient(interceptor.player, { message = resultado.message, dano = resultado.dano, hp = resultado.hpInterceptor })
+			EnemyAttackResult:FireClient(interceptor.player, { message = resultado.message, dano = resultado.dano, hp = resultado.hpInterceptor, tocarReacaoDano = resultado.dano > 0 })
 		end
 	end
 end
@@ -786,6 +1015,20 @@ local function startDummyAI(dummy)
 						data.humanoid:MoveTo(root.Position) -- para no lugar
 						data.attacking = true
 						data.currentTarget = nearestPlayer
+						-- Pedido do Lucas: "parece atacar por proximidade
+						-- algumas vezes, nao necessariamente na minha
+						-- direcao certinho" -- MoveTo(root.Position) so
+						-- manda "parar no lugar", nao vira o boneco pra
+						-- encarar o alvo (ele fica com a orientacao de
+						-- quando parou de perseguir, que pode nao bater
+						-- com a direcao real do jogador). Vira o boneco
+						-- pra encarar o jogador explicitamente antes de
+						-- atacar.
+						local alvoPos = nearestPlayer.Character.PrimaryPart.Position
+						local direcaoPlana = Vector3.new(alvoPos.X - root.Position.X, 0, alvoPos.Z - root.Position.Z)
+						if direcaoPlana.Magnitude > 0.001 then
+							root.CFrame = CFrame.lookAt(root.Position, root.Position + direcaoPlana)
+						end
 						showTelegraph(dummy, TELEGRAPH_SECONDS)
 						if data.attackTrack then
 							data.attackTrack:Play()
@@ -1059,26 +1302,57 @@ function CombatService.BasicAttack(player)
 	local plrChar = player.Character
 	local origin = plrChar and plrChar:GetPivot().Position or Vector3.zero
 
-	local nearest, bestDist = nil, math.huge
+	-- Sistema de combos (Lucas, "combos encadeados"): apertar ataque
+	-- repetidas vezes dentro de uma janela curta avanca o estagio
+	-- (1->2->3->4->5, depois volta pro 1). Servidor e AUTORIDADE --
+	-- calcula o estagio sozinho baseado no tempo real entre ataques,
+	-- nao confia em nada que o cliente mande (cliente so PREVE
+	-- visualmente o mesmo calculo, pra animacao responder na hora).
+	local COMBO_JANELA = 1.2
+	local agora = os.clock()
+	if not character.ComboStage or not character.ComboLastAttackTime or (agora - character.ComboLastAttackTime) > COMBO_JANELA then
+		character.ComboStage = 1
+	else
+		character.ComboStage = (character.ComboStage % 5) + 1
+	end
+	character.ComboLastAttackTime = agora
+	local estagioCombo = character.ComboStage
+
+	-- Hitbox de area real (Lucas, "sistema de hitbox"): antes so
+	-- olhava "qual boneco esta mais perto", ignorando pra onde o
+	-- jogador esta olhando e sem conseguir atingir mais de um alvo.
+	-- Agora verifica TODOS os dummies dentro de um raio E de um
+	-- angulo cone na frente do personagem -- ja preparado pra
+	-- combos/golpes em area atingirem varios inimigos de uma vez
+	-- (so ha 1 boneco pra testar agora, mas a funcao ja suporta N).
+	local HITBOX_ALCANCE = 12
+	local HITBOX_ANGULO_GRAUS = 100 -- cone de 100 graus na frente (50 pra cada lado)
+	local lookVector = plrChar and plrChar:GetPivot().LookVector or Vector3.new(0, 0, -1)
+
+	local alvosNoHitbox = {}
 	for dummy in pairs(dummies) do
 		local data = dummies[dummy]
 		if data and not data.respawning then
 			local root = data.root
 			local dummyPos = root and root.Position or dummy:GetPivot().Position
-			local dist = (dummyPos - origin).Magnitude
-			if dist < bestDist then
-				nearest = dummy
-				bestDist = dist
+			local direcaoAlvo = dummyPos - origin
+			local dist = direcaoAlvo.Magnitude
+			if dist <= HITBOX_ALCANCE and dist > 0.01 then
+				local anguloRad = math.acos(math.clamp(lookVector.Unit:Dot(direcaoAlvo.Unit), -1, 1))
+				if math.deg(anguloRad) <= HITBOX_ANGULO_GRAUS / 2 then
+					table.insert(alvosNoHitbox, { dummy = dummy, dist = dist })
+				end
 			end
 		end
 	end
 
-	if not nearest then
-		return { success = false, error = "Nenhum boneco de treino disponível." }
+	if #alvosNoHitbox == 0 then
+		return { success = false, error = "Nenhum alvo no alcance/direcao do golpe." }
 	end
-	if bestDist > 25 then
-		return { success = false, error = "Muito longe do boneco (" .. math.floor(bestDist) .. "m). Aproxime-se." }
-	end
+
+	table.sort(alvosNoHitbox, function(a, b) return a.dist < b.dist end)
+	local nearest = alvosNoHitbox[1].dummy
+	local bestDist = alvosNoHitbox[1].dist
 
 	local attrs = character.Attributes or {}
 	local forVal = attrs.FOR and attrs.FOR.value or 10
@@ -1110,6 +1384,7 @@ function CombatService.BasicAttack(player)
 			dano = 0,
 			hpRestante = dummies[nearest].hp,
 			hpMax = dummies[nearest].maxHp,
+			estagioCombo = estagioCombo,
 		}
 	end
 
@@ -1117,6 +1392,15 @@ function CombatService.BasicAttack(player)
 	local danoBase = rollDice(1, 6)
 	local dano = danoBase + forMod
 	local partes = { "1d6=" .. danoBase, "FOR+" .. forMod }
+
+	-- Bonus de combo: cada estagio alem do 1o soma +1 de dano fixo
+	-- (golpes seguidos ficam mais fortes, incentivando manter a
+	-- sequencia em vez de so espamar o botao com pausas longas).
+	if estagioCombo > 1 then
+		local bonusCombo = estagioCombo - 1
+		dano = dano + bonusCombo
+		table.insert(partes, "COMBO" .. estagioCombo .. "+" .. bonusCombo)
+	end
 
 	local renBonus = 0
 	local atacaComAura = BuffManager.Has(player, "Ren")
@@ -1160,6 +1444,7 @@ function CombatService.BasicAttack(player)
 		hpMax = dmgResultado.hpMax,
 		killed = dmgResultado.killed,
 		conquista = dmgResultado.conquista,
+		estagioCombo = estagioCombo,
 	}
 
 	return result

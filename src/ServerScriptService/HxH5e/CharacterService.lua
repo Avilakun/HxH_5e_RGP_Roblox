@@ -1159,6 +1159,28 @@ end
 -- tipo Loucura) -- esta aqui reduz o ATUAL, recuperavel normalmente.
 -- Retorna quanto realmente foi aplicado (depois do RDM), pra quem
 -- chamar poder logar/mostrar mensagem precisa.
+-- DEBUG/TESTE: restaura PV, Aura e Sanidade pro maximo instantaneamente.
+-- Pedido do Lucas: "recursos (vitais) estao com salvamento
+-- persistente (adequado pro jogo, mas atrapalha alguns recursos no
+-- teste de combate)" -- ferramenta pra resetar rapido durante testes
+-- sem precisar esperar regenerar ou criar personagem novo. So afeta
+-- o ATUAL (nao mexe em Max/permanente), entao nao interfere com
+-- Loucuras nem outras penalidades permanentes.
+function CharacterService.ResetVitaisParaTeste(character)
+	if character.Vitals then
+		if character.Vitals.HP then
+			character.Vitals.HP.Current = character.Vitals.HP.Max
+		end
+		if character.Vitals.Aura then
+			character.Vitals.Aura.Current = character.Vitals.Aura.Max
+		end
+		if character.Vitals.Sanidade then
+			character.Vitals.Sanidade.Current = character.Vitals.Sanidade.Max
+		end
+	end
+	character.ReacoesGastas = 0
+end
+
 function CharacterService.AplicarDanoSanidade(character, quantidadeBruta)
 	if quantidadeBruta <= 0 or not (character.Vitals and character.Vitals.Sanidade) then
 		return 0

@@ -46,6 +46,9 @@ local GainXP = getOrCreateRemote("GainXP")
 local AddGrau = getOrCreateRemote("AddGrau")
 local AddRestricao = getOrCreateRemote("AddRestricao")
 local BasicAttack = getOrCreateRemote("BasicAttack")
+local ResolverQueda = getOrCreateRemote("ResolverQueda")
+local TentarEscalada = getOrCreateRemote("TentarEscalada")
+local AvisarAterrissagem = getOrCreateEvent("AvisarAterrissagem")
 local AttemptReaction = getOrCreateRemote("AttemptReaction")
 local EnemyTelegraph = getOrCreateEvent("EnemyTelegraph")
 local EnemyAttackResult = getOrCreateEvent("EnemyAttackResult")
@@ -76,6 +79,7 @@ local EditHatsu = getOrCreateRemote("EditHatsu")
 local AchievementUnlocked = getOrCreateEvent("AchievementUnlocked")
 local GetAchievementsCatalog = getOrCreateRemote("GetAchievementsCatalog")local GetOrganizations = getOrCreateRemote("GetOrganizations")
 local JoinOrganization = getOrCreateRemote("JoinOrganization")
+local ResetVitaisTeste = getOrCreateRemote("ResetVitaisTeste")
 local CreateGuild = getOrCreateRemote("CreateGuild")
 local SetAlignment = getOrCreateRemote("SetAlignment")local SugarAura = getOrCreateRemote("SugarAura")
 local PromoteVampiroCasta = getOrCreateRemote("PromoteVampiroCasta")
@@ -393,6 +397,28 @@ SetHotkeySlot.OnServerInvoke = function(player, slotIndex, principioNomeOuFalse)
 	end
 	return result
 end
+
+-- DEBUG/TESTE: pedido do Lucas pra facilitar testes de combate
+-- sem esperar regenerar vitais naturalmente entre tentativas.
+ResetVitaisTeste.OnServerInvoke = function(player)
+	local character = CharacterService.GetActiveCharacter(player)
+	if not character then return { success = false, error = "Sem personagem ativo." } end
+	CharacterService.ResetVitaisParaTeste(character)
+	CharacterService.SavePlayer(player)
+	return { success = true, message = "Vitais restaurados pro maximo (debug)." }
+end
+
+ResolverQueda.OnServerInvoke = function(player, alturaStuds, foiEmpurradoExplosao)
+	return CombatService.ResolverQueda(player, alturaStuds, foiEmpurradoExplosao)
+end
+
+TentarEscalada.OnServerInvoke = function(player)
+	return CombatService.TentarEscalada(player)
+end
+
+AvisarAterrissagem.OnServerEvent:Connect(function(player)
+	CombatService.ResetEscaladaSeNoChao(player)
+end)
 
 JoinOrganization.OnServerInvoke = function(player, orgId)
 	local character = CharacterService.GetActiveCharacter(player)
